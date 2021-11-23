@@ -13,13 +13,6 @@ ENT.Information = "Highly adaptable monowheel vehicle"
 ENT.Name = "Crawler"
 ENT.Class = "crawler"
 ENT.AdminSpawnable = false
-ENT.Forward = false
-ENT.Backward = false
-ENT.Left = false
-ENT.Right = false
-ENT.LastComputedRollTime = 0
-ENT.CurrentRollVariation = 0
-ENT.WheelLoopStopTime = 0
 
 for _, f in pairs(file.Find("sound/crawler/*", "GAME")) do
 	util.PrecacheSound("sound/crawler/" .. f)
@@ -28,6 +21,15 @@ end
 list.Set("Vehicles", "crawler", ENT)
 
 if SERVER then
+	ENT.Forward = false
+	ENT.Backward = false
+	ENT.Left = false
+	ENT.Right = false
+	ENT.Turbo = false
+	ENT.LastComputedRollTime = 0
+	ENT.CurrentRollVariation = 0
+	ENT.WheelLoopStopTime = 0
+
 	local CVAR_FASTDL = CreateConVar("crawler_fastdl", "0", FCVAR_ARCHIVE, "Should clients download content for crawlers on join or not")
 
 	local function add_resource_dir(dir)
@@ -137,6 +139,7 @@ if SERVER then
 			if key == IN_BACK then self.Backward = pressed end
 			if key == IN_MOVELEFT then self.Left = pressed end
 			if key == IN_MOVERIGHT then self.Right = pressed end
+			if key == IN_SPEED then self.Turbo = pressed end
 		end
 
 		hook.Add("KeyPress", self, function(_, ply, key) key_handler(ply, key, true) end)
@@ -390,19 +393,22 @@ if SERVER then
 			phys_wheel:EnableGravity(false)
 			phys_wheel:AddVelocity(self:GetUp() * DOWNWARD_FORCE) -- stick to surface below
 
+			local final_linear_vel_mult = VEL_MULT
+			if self.Turbo then final_linear_vel_mult = VEL_MULT + 200 end -- add extra velocity for turbo
+
 			if self.Forward then
 				phys_wheel:AddAngleVelocity(VECTOR_UP * ANGLE_VEL_MULT)
-				phys_wheel:AddVelocity(self:GetForward() * VEL_MULT)
+				phys_wheel:AddVelocity(self:GetForward() * final_linear_vel_mult)
 
 				-- this should push harder on walls when going up or down
 				if self:OnWall() then
-					phys_wheel:AddVelocity(self:GetForward() * VEL_MULT / 2)
+					phys_wheel:AddVelocity(self:GetForward() * final_linear_vel_mult / 2)
 				end
 			end
 
 			if self.Backward then
 				phys_wheel:AddAngleVelocity(VECTOR_UP * -ANGLE_VEL_MULT)
-				phys_wheel:AddVelocity(self:GetForward() * -VEL_MULT)
+				phys_wheel:AddVelocity(self:GetForward() * -final_linear_vel_mult)
 			end
 
 			if self.Right then
