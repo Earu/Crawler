@@ -133,21 +133,10 @@ if SERVER then
 		local function key_handler(ply, key, pressed)
 			if ply ~= self:GetDriver() then return end
 
-			if key == IN_FORWARD then
-				self.Forward = pressed
-			end
-
-			if key == IN_BACK then
-				self.Backward = pressed
-			end
-
-			if key == IN_MOVELEFT then
-				self.Left = pressed
-			end
-
-			if key == IN_MOVERIGHT then
-				self.Right = pressed
-			end
+			if key == IN_FORWARD then self.Forward = pressed end
+			if key == IN_BACK then self.Backward = pressed end
+			if key == IN_MOVELEFT then self.Left = pressed end
+			if key == IN_MOVERIGHT then self.Right = pressed end
 		end
 
 		hook.Add("KeyPress", self, function(_, ply, key) key_handler(ply, key, true) end)
@@ -165,10 +154,15 @@ if SERVER then
 			key_handler(ply, IN_BACK, false)
 			key_handler(ply, IN_MOVELEFT, false)
 			key_handler(ply, IN_MOVERIGHT, false)
+
+			timer.Simple(0, function()
+				if not self:IsValid() or not ply:IsValid() then return end
+				ply:SetPos(self:FindSpace(ply))
+			end)
 		end)
 
 		hook.Add("PlayerUse", self, function(_, ply, ent)
-			if (ent == self.Wheel or ent == self) and IsValid(self.Seat) then
+			if (ent == self.Wheel or ent == self) and IsValid(self.Seat) and not ply:InVehicle() then
 				ply:EnterVehicle(self.Seat)
 			end
 		end)
@@ -180,6 +174,33 @@ if SERVER then
 		hook.Add("GravGunPickupAllowed", self, function(_, ent)
 			if ent == self or ent == self.Wheel or ent == self.Seat then return false end
 		end)
+	end
+
+	function ENT:IsFreeSpace(vec, ply)
+		local maxs = ply:OBBMaxs()
+		local tr = util.TraceHull({
+			start = vec,
+			endpos = vec + Vector(0, 0, maxs.z or 60),
+			filter = self.Filter,
+			mins = Vector(-maxs.y, -maxs.y, 0),
+			maxs = Vector(maxs.y, maxs.y, 1)
+		})
+
+		return not tr.Hit
+	end
+
+	function ENT:FindSpace(ply)
+		local pos, maxs = self:GetPos(), ply:OBBMaxs()
+		local left = pos + self:GetRight() * -60
+		local right = pos + self:GetRight() * 60
+
+		if self:IsFreeSpace(left, ply) then
+			return left
+		elseif self:IsFreeSpace(right, ply) then
+			return right
+		else
+			return pos + Vector(0, 0, maxs.z)
+		end
 	end
 
 	local MAX_ROLL_VARIATION = 30
@@ -221,9 +242,11 @@ if SERVER then
 		local cur_right = cur_ang:Right()
 		local target_right = target_ang:Right()
 		local target_up = target_ang:Up()
+
 		local pitch_vel = math.asin(cur_forward:Dot(target_up)) * 180 / math.pi
 		local yaw_vel = math.asin(cur_forward:Dot(target_right)) * 180 / math.pi
 		local roll_vel = math.asin(cur_right:Dot(target_up)) * 180 / math.pi
+
 		ang_vel.y = ang_vel.y + pitch_vel
 		ang_vel.z = ang_vel.z + yaw_vel
 		ang_vel.x = ang_vel.x + roll_vel + self:ComputeTurningRoll()
@@ -318,6 +341,12 @@ if SERVER then
 		if not self:IsOnSurface() then
 			phys:EnableGravity(true)
 			phys_wheel:EnableGravity(true)
+
+			-- this stabilizes the vehicle when jumping or falling, preventing the vomit inducing rotations
+			local ang_vel = self:ComputeAngularVelocity(phys, self:GetForward():Angle())
+			ang_vel:Mul(20)
+			ang_vel:Sub(phys:GetAngleVelocity())
+			phys:AddAngleVelocity(ang_vel)
 			return
 		end
 
@@ -340,12 +369,13 @@ if SERVER then
 
 					local m = Matrix()
 					m:Rotate(diff_ang)
-					m:SetUp(self:GetUp())
 
 					if self:OnWall() then
 						m:SetRight(self.Wheel:GetUp())
+						--m:SetForward(self:GetForward()) -- this makes it less shaky when going up and down
 					end
 
+					m:SetUp(self:GetUp())
 					target_ang = m:GetAngles()
 				end
 			end
@@ -431,6 +461,7 @@ if SERVER then
 	end
 
 	function ENT:GetDriver()
+		if not IsValid(self.Seat) then return NULL end
 		return self.Seat:GetDriver()
 	end
 
@@ -457,25 +488,6 @@ if SERVER then
 		})
 
 		return tr.Hit == true
-	end
-
-	local impact_sounds = {
-		"physics/metal/metal_solid_impact_soft1.wav",
-		"physics/metal/metal_solid_impact_soft2.wav",
-		"physics/metal/metal_solid_impact_soft3.wav",
-		"physics/metal/metal_solid_impact_hard1.wav",
-		"physics/metal/metal_solid_impact_hard2.wav",
-		"physics/metal/metal_solid_impact_hard3.wav",
-		"physics/metal/metal_solid_impact_hard4.wav",
-		"physics/metal/metal_solid_impact_hard5.wav",
-	}
-	function ENT:PhysicsCollide(data, collider)
-		if not IsValid(data.HitEntity) then return end
-		if data.HitEntity == self or data.HitEntity == self.Seat then
-			local vel = data.OurOldVelocity:Length()
-			local impact_sound = vel <= 1000 and impact_sounds[math.random(1, 3)] or impact_sounds[math.random(4, #impact_sounds)]
-			self:EmitSound(impact_sound)
-		end
 	end
 end
 
