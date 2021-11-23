@@ -89,12 +89,39 @@ if SERVER then
 			phys_wheel:Wake()
 		end
 
+		local function apply_ownership()
+			local owner = self.CPPIGetOwner and self:CPPIGetOwner() or self:GetOwner()
+			if not IsValid(owner) then owner = self:GetCreator() end
+
+			if IsValid(owner) then
+				if IsValid(self.Wheel) then
+					if self.Wheel.CPPISetOwner then
+						self.Wheel:CPPISetOwner(owner)
+					end
+
+					self.Wheel:SetOwner(owner)
+					self.Wheel:SetCreator(owner)
+				end
+
+				if IsValid(self.Seat) then
+					if self.Seat.CPPISetOwner then
+						self.Seat:CPPISetOwner(owner)
+					end
+
+					self.Seat:SetOwner(owner)
+					self.Seat:SetCreator(owner)
+				end
+			end
+		end
+
 		-- this is necessary because if its done too early it crashes the game
 		-- reason being that the spawnmenu, and some other entity spawning code set the pos
 		-- of the entity after spawning it which causes the constraint to literreally shit itself
 		timer.Simple(0.1, function()
 			if not IsValid(self) then return end
 			if not IsValid(self.Wheel) then return end
+
+			apply_ownership()
 
 			self.Wheel:SetPos(self:GetPos() + Vector(0, 0, 20))
 			self.Wheel:SetAngles(self:GetAngles() + Angle(90, 90, 0))
@@ -148,6 +175,10 @@ if SERVER then
 
 		hook.Add("EntityEmitSound", self, function(_, data)
 			if data.Entity == self.Wheel then return false end
+		end)
+
+		hook.Add("GravGunPickupAllowed", self, function(_, ent)
+			if ent == self or ent == self.Wheel or ent == self.Seat then return false end
 		end)
 	end
 
@@ -354,13 +385,13 @@ if SERVER then
 
 			local going_left = self.Left and 1 or 0
 			local going_right = self.Right and 1 or 0
-			local going_forward = self.Forward and 1 or 0
-			local going_backward = self.Backward and 1 or 0
 			if (going_left - going_right) == 0 then
 				local cur_ang_vel = phys_wheel:GetAngleVelocity()
 				phys_wheel:AddAngleVelocity(-cur_ang_vel / 2 * DAMP_FACTOR)
 			end
 
+			local going_forward = self.Forward and 1 or 0
+			local going_backward = self.Backward and 1 or 0
 			if (going_forward - going_backward) == 0 then
 				local cur_vel = phys_wheel:GetVelocity()
 				phys_wheel:AddVelocity(-cur_vel / 2 * DAMP_FACTOR)
