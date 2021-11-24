@@ -1,0 +1,26 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/crawler/body_colorable"
+	"$surfaceprop" "metal"
+	"$bumpmap" "models/crawler/body_normal"
+	"$envmap" "env_cubemap"
+	"$normalmapalphaenvmapmask" 1
+	"$envmapcontrast" 0.2
+	"$envmapsaturation" 0
+	"$envmaptint" "[ 1 1 1 ]"
+	"$model" 1
+	
+	"$blendtintbybasealpha" "1" 
+ 	"$blendtintcoloroverbase" "0"
+
+	"$phong"     "1"
+	"$phongexponenttexture" "models/crawler/body_exp"
+ 	"$phongboost"   "3"
+ 	"$phongfresnelranges"   "[.7 .1 1]"
+
+	"$rimlight" "1"
+	"$rimlightboost" "5"
+	"$rimlightexponent" "3"	
+
+	"$HalfLambert" 1
+}

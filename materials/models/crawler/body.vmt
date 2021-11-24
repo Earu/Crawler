@@ -1,0 +1,10 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/crawler/body"
+	"$surfaceprop" "metal"
+	"$envmap" "env_cubemap"
+	"$halflambert" 1
+	"$envmapcontrast" 1
+	"$envmapsaturation" 0.5
+	"$envmaptint" "[ 0.7 0.7 0.7 ]"
+}

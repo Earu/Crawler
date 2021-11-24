@@ -1,0 +1,19 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/crawler/reactor"
+	"$surfaceprop" "metal"
+	"$bumpmap" "models/crawler/reactor_normal"
+	"$envmapcontrast" 0.2
+	"$envmapsaturation" 0
+	"$envmaptint" "[1 1 1]"
+	"$model" 1
+
+	"$blendtintbybasealpha" "1" 
+ 	"$blendtintcoloroverbase" "0"
+	
+	"$phong" "1"
+	"$halflambert" "1"
+	"$phongexponent" "60"
+	"$phongboost" "2"
+	"$phongfresnelranges" "[.5 .8 1]"
+}

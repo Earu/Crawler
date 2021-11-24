@@ -8,7 +8,8 @@ ENT.AdminOnly = false
 ENT.PrintName = "Crawler"
 ENT.ClassName = "crawler"
 ENT.Category = "Half-Life 2"
-ENT.Model = "models/sprops/rectangles/size_4/rect_36x72x3.mdl"
+ENT.RenderGroup = RENDERGROUP_BOTH
+ENT.Model = "models/crawler/monowheel.mdl"
 ENT.Information = "Highly adaptable monowheel vehicle"
 ENT.Name = "Crawler"
 ENT.Class = "crawler"
@@ -19,6 +20,12 @@ for _, f in pairs(file.Find("sound/crawler/*", "GAME")) do
 end
 
 list.Set("Vehicles", "crawler", ENT)
+local WHEEL_OFFSET = Vector(0, 0, 10)
+local WHEEL_ANGLE_OFFSET = Angle(90, 90, 0)
+
+function ENT:GetDriver()
+	return self:GetNWEntity("Driver", NULL)
+end
 
 if SERVER then
 	ENT.Forward = false
@@ -41,6 +48,8 @@ if SERVER then
 
 	if CVAR_FASTDL:GetBool() then
 		add_resource_dir("sound/crawler")
+		add_resource_dir("materials/models/crawler/monowheel")
+		add_resource_dir("models/crawler")
 	end
 
 	function ENT:Initialize()
@@ -54,65 +63,72 @@ if SERVER then
 		local phys = self:GetPhysicsObject()
 		if phys:IsValid() then
 			phys:SetMass(24)
-			phys:AddGameFlag(FVPHYSICS_NO_PLAYER_PICKUP)
 			phys:SetMaterial("gmod_silent")
+			phys:AddGameFlag(FVPHYSICS_NO_PLAYER_PICKUP)
+			phys:SetBuoyancyRatio(1)
 			phys:Wake()
 		end
 
 		self.Seat = ents.Create("prop_vehicle_prisoner_pod")
 		self.Seat:SetModel("models/nova/jalopy_seat.mdl")
-		self.Seat:SetPos(self:GetPos() + Vector(0, 0, 5) + self:GetForward() * -5)
+		self.Seat:SetPos(self:GetPos() + self:GetForward() * -25 + Vector(0, 0, -13))
 		self.Seat:SetAngles(self:GetAngles() - Angle(0, 90, 0))
+		self.Seat:SetUseType(SIMPLE_USE)
 		self.Seat:SetParent(self)
 		self.Seat:Spawn()
+
+		self.BikeModel = ents.Create("prop_physics")
+		self.BikeModel:SetModel("models/crawler/monowheel.mdl")
+		self.BikeModel:SetPos(self:GetPos())
+		self.BikeModel:SetAngles(self:GetAngles())
+		self.BikeModel:SetParent(self)
+		self.BikeModel:SetUseType(SIMPLE_USE)
+		self.BikeModel:Spawn()
+
+		local bike_phys = self.BikeModel:GetPhysicsObject()
+		if IsValid(bike_phys) then
+			bike_phys:SetMass(1)
+			bike_phys:SetMaterial("gmod_silent")
+			bike_phys:AddGameFlag(FVPHYSICS_NO_PLAYER_PICKUP)
+		end
 
 		self.Wheel = ents.Create("prop_physics")
 		self.Wheel:SetModel("models/hunter/tubes/tube2x2x025.mdl")
 		self.Wheel:SetMaterial("models/props_combine/portalball001_sheet")
-		self.Wheel:SetPos(self:GetPos() + Vector(0, 0, 20))
-		self.Wheel:SetAngles(self:GetAngles() + Angle(90, 90, 0))
-		self.Wheel:SetUseType(SIMPLE_USE)
+		self.Wheel:SetPos(self:GetPos() + WHEEL_OFFSET)
+		self.Wheel:SetAngles(self:GetAngles() + WHEEL_ANGLE_OFFSET)
 		self.Wheel:Spawn()
+		self:SetNWEntity("Wheel", self.Wheel)
 
 		local old_bounds = self.Wheel:OBBMaxs()
 		self.Wheel:PhysicsInitSphere(50)
 		self.Wheel:SetCollisionBounds(-old_bounds, old_bounds)
 		self.Wheel:SetCollisionGroup(COLLISION_GROUP_PASSABLE_DOOR)
-
-		self.Wheel:SetRenderMode(RENDERMODE_TRANSALPHA)
-		self.Wheel:SetColor(Color(0, 255, 255, 100))
 		self:DeleteOnRemove(self.Wheel)
 
 		local phys_wheel = self.Wheel:GetPhysicsObject()
 		if IsValid(phys_wheel) then
 			phys_wheel:SetMass(1)
-			phys_wheel:AddGameFlag(FVPHYSICS_NO_PLAYER_PICKUP)
 			phys_wheel:SetMaterial("gmod_silent")
+			phys_wheel:AddGameFlag(FVPHYSICS_NO_PLAYER_PICKUP)
 			phys_wheel:Wake()
 		end
 
 		local function apply_ownership()
 			local owner = self.CPPIGetOwner and self:CPPIGetOwner() or self:GetOwner()
 			if not IsValid(owner) then owner = self:GetCreator() end
+			if not IsValid(owner) then return end
 
-			if IsValid(owner) then
-				if IsValid(self.Wheel) then
-					if self.Wheel.CPPISetOwner then
-						self.Wheel:CPPISetOwner(owner)
-					end
+			local bike_ents = { self.Wheel, self.BikeModel, self.Seat }
+			for _, ent in ipairs(bike_ents) do
+				if not IsValid(ent) then continue end
 
-					self.Wheel:SetOwner(owner)
-					self.Wheel:SetCreator(owner)
+				if ent.CPPISetOwner then
+					ent:CPPISetOwner(owner)
 				end
 
-				if IsValid(self.Seat) then
-					if self.Seat.CPPISetOwner then
-						self.Seat:CPPISetOwner(owner)
-					end
-
-					self.Seat:SetOwner(owner)
-					self.Seat:SetCreator(owner)
-				end
+				ent:SetOwner(owner)
+				ent:SetCreator(owner)
 			end
 		end
 
@@ -125,12 +141,12 @@ if SERVER then
 
 			apply_ownership()
 
-			self.Wheel:SetPos(self:GetPos() + Vector(0, 0, 20))
-			self.Wheel:SetAngles(self:GetAngles() + Angle(90, 90, 0))
-			constraint.Axis(self.Wheel, self, 0, 0, Vector(0, 0, 1), Vector(0, 0, 20), 0, 0, 0, 1)
+			self.Wheel:SetPos(self:GetPos() + WHEEL_OFFSET)
+			self.Wheel:SetAngles(self:GetAngles() + WHEEL_ANGLE_OFFSET)
+			constraint.Axis(self.Wheel, self, 0, 0, Vector(0, 0, 1), WHEEL_OFFSET, 0, 0, 0, 1)
 		end)
 
-		self.Filter = { self, self.Seat, self.Wheel }
+		self.Filter = { self, self.Seat, self.Wheel, self.BikeModel }
 
 		local function key_handler(ply, key, pressed)
 			if ply ~= self:GetDriver() then return end
@@ -148,11 +164,15 @@ if SERVER then
 		hook.Add("PlayerEnteredVehicle", self, function(_, ply, veh)
 			if veh ~= self.Seat then return end
 			table.insert(self.Filter, ply)
+			self:SetNWEntity("Driver", ply)
 		end)
 
 		hook.Add("PlayerLeaveVehicle", self, function(_, ply, veh)
 			if veh ~= self.Seat then return end
-			table.remove(self.Filter, 4)
+
+			table.remove(self.Filter, #self.Filter)
+			self:SetNWEntity("Driver", NULL)
+
 			key_handler(ply, IN_FORWARD, false)
 			key_handler(ply, IN_BACK, false)
 			key_handler(ply, IN_MOVELEFT, false)
@@ -160,12 +180,13 @@ if SERVER then
 
 			timer.Simple(0, function()
 				if not self:IsValid() or not ply:IsValid() then return end
+				ply:ExitVehicle()
 				ply:SetPos(self:FindSpace(ply))
 			end)
 		end)
 
 		hook.Add("PlayerUse", self, function(_, ply, ent)
-			if (ent == self.Wheel or ent == self) and IsValid(self.Seat) and not ply:InVehicle() then
+			if ent == self.BikeModel and IsValid(self.Seat) and not ply:InVehicle() then
 				ply:EnterVehicle(self.Seat)
 			end
 		end)
@@ -175,7 +196,7 @@ if SERVER then
 		end)
 
 		hook.Add("GravGunPickupAllowed", self, function(_, ent)
-			if ent == self or ent == self.Wheel or ent == self.Seat then return false end
+			if ent == self or ent == self.Wheel or ent == self.Seat or ent == self.BikeModel then return false end
 		end)
 	end
 
@@ -266,7 +287,7 @@ if SERVER then
 		local tr_front, tr_back, tr_right, tr_left
 		local vector_down = -self:GetUp() * TRACE_LENGTH
 		local vector_forward = self:GetForward() * TRACE_LENGTH
-		local struct = { filter = self.Filter }
+		local struct = { filter = self.Filter, }
 
 		do -- FRONT
 			local tr_front_pos = self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH
@@ -277,13 +298,13 @@ if SERVER then
 			tr_front = trace_line(struct)
 
 			-- TRACE FORWARD TO BELOW
-			if not tr_front.Hit then
+			if not tr_front.Hit or tr_front.HitSky then
 				struct.endpos = tr_front_pos + vector_down
 				tr_front = trace_line(struct)
 			end
 
 			-- TRACE FORWARD TO BACKWARD
-			if not tr_front.Hit then
+			if not tr_front.Hit or tr_front.HitSky then
 				struct.endpos = tr_front_pos + vector_down + -vector_forward
 				tr_front = trace_line(struct)
 			end
@@ -298,13 +319,13 @@ if SERVER then
 			tr_back = trace_line(struct)
 
 			-- TRACE BACKWARD TO BELOW
-			if not tr_back.Hit then
+			if not tr_back.Hit or tr_back.HitSky then
 				struct.endpos = tr_back_pos + vector_down
 				tr_back = trace_line(struct)
 			end
 
 			-- TRACE BACKWARD TO FORWARD
-			if not tr_back.Hit then
+			if not tr_back.Hit or tr_back.HitSky then
 				struct.endpos = tr_back_pos + vector_down + vector_forward
 				tr_back = trace_line(struct)
 			end
@@ -343,10 +364,14 @@ if SERVER then
 		-- enable back gravity for jumping, falling etc
 		if not self:IsOnSurface() then
 			phys:EnableGravity(true)
+			phys:SetMass(500)
 			phys_wheel:EnableGravity(true)
 
 			-- this stabilizes the vehicle when jumping or falling, preventing the vomit inducing rotations
-			local ang_vel = self:ComputeAngularVelocity(phys, self:GetForward():Angle())
+			local ang = self:GetAngles()
+			ang.pitch = self:GetForward():Angle().pitch
+
+			local ang_vel = self:ComputeAngularVelocity(phys, ang)
 			ang_vel:Mul(20)
 			ang_vel:Sub(phys:GetAngleVelocity())
 			phys:AddAngleVelocity(ang_vel)
@@ -355,17 +380,25 @@ if SERVER then
 
 		do -- base related stuff
 			phys:EnableGravity(false)
+			phys:SetMass(24)
 			local target_ang = Angle(0, 0, 0)
 
 			if self:InWater() then
 				local cur_ang = self:GetAngles()
-				target_ang = Angle(0, cur_ang.yaw, cur_ang.roll)
+				local tr_front, tr_back = self:ExecuteTraces()
+				cur_ang.pitch = 0
+				if (tr_front.Hit and not tr_front.HitSky) and (tr_back.Hit and not tr_back.HitSky) then
+					cur_ang.pitch = (tr_front.HitPos - tr_back.HitPos):Angle().pitch
+				end
+
+				cur_ang.roll = 0
+				target_ang = cur_ang
 			else
 				local tr_front, tr_back, tr_right, tr_left = self:ExecuteTraces()
-				if tr_front.Hit and tr_back.Hit then
+				if (tr_front.Hit and not tr_front.HitSky) and (tr_back.Hit and not tr_back.HitSky) then
 					-- Rotation matrix, will work with ceilings, sky etc but not with walls -> gimbal lock
 					local diff_ang = (tr_back.HitPos - tr_front.HitPos):Angle()
-					if tr_right.Hit and tr_left.Hit then
+					if (tr_right.Hit and not tr_right.HitSky) and (tr_left.Hit and not tr_left.HitSky) then
 						local side_diff_ang = (tr_left.HitPos - tr_right.HitPos):Angle()
 						diff_ang.roll = side_diff_ang.pitch
 					end
@@ -375,7 +408,7 @@ if SERVER then
 
 					if self:OnWall() then
 						m:SetRight(self.Wheel:GetUp())
-						--m:SetForward(self:GetForward()) -- this makes it less shaky when going up and down
+						m:SetForward(-self:GetForward()) -- this makes it less shaky when going up and down
 					end
 
 					m:SetUp(self:GetUp())
@@ -402,7 +435,7 @@ if SERVER then
 
 				-- this should push harder on walls when going up or down
 				if self:OnWall() then
-					phys_wheel:AddVelocity(self:GetForward() * final_linear_vel_mult / 2)
+					phys_wheel:AddVelocity(self:GetForward() * final_linear_vel_mult * 0.8)
 				end
 			end
 
@@ -466,11 +499,6 @@ if SERVER then
 		end
 	end
 
-	function ENT:GetDriver()
-		if not IsValid(self.Seat) then return NULL end
-		return self.Seat:GetDriver()
-	end
-
 	function ENT:InWater()
 		if self:WaterLevel() > 0 then return true end
 		if IsValid(self.Wheel) and self.Wheel:WaterLevel() > 0 then return true end
@@ -493,10 +521,57 @@ if SERVER then
 			filter = self.Filter,
 		})
 
-		return tr.Hit == true
+		return tr.Hit and not tr.HitSky
 	end
 end
 
 if CLIENT then
 	language.Add("crawler", "Crawler")
+
+	function ENT:Initialize()
+	end
+
+	hook.Add("HUDPaint", "crawler", function()
+		local ply = LocalPlayer()
+		if not ply:InVehicle() then return end
+
+		local parent = ply:GetVehicle():GetParent()
+		if not IsValid(parent) then return end
+		if parent:GetClass() ~= "crawler" then return end
+
+		local left = (parent:GetPos() + -parent:GetRight() * 18):ToScreen()
+		local left_forward = (parent:GetPos() + -parent:GetRight() * 18 + parent:GetForward() * 200):ToScreen()
+		local right = (parent:GetPos() + parent:GetRight() * 18):ToScreen()
+		local right_forward = (parent:GetPos() + parent:GetRight() * 18 + parent:GetForward() * 200):ToScreen()
+
+
+		surface.SetDrawColor(0, 255, 0, 255)
+		surface.DrawLine(left.x, left.y, left_forward.x, left_forward.y)
+		surface.DrawLine(right.x, right.y, right_forward.x, right_forward.y)
+		surface.DrawLine(left.x, left.y, right.x, right.y)
+		surface.DrawLine(left_forward.x, left_forward.y, right_forward.x, right_forward.y)
+	end)
+
+	local debugwhite = Material("models/props_combine/portalball001_sheet")
+	function ENT:Draw()
+		local wheel = self:GetNWEntity("Wheel")
+		if not IsValid(wheel) then return end
+
+		render.SetLightingMode(2)
+		render.MaterialOverride(debugwhite)
+		render.SetColorModulation(0, 1, 0)
+		wheel:DrawModel()
+		render.SetColorModulation(1, 1, 1)
+		render.MaterialOverride()
+		render.SetLightingMode(0)
+	end
+
+	local DRAW_WHEEL_OFFSET = 3
+	function ENT:Think()
+		local wheel = self:GetNWEntity("Wheel")
+		if not IsValid(wheel) then return end
+
+		-- this makes the wheel way more stable looking
+		wheel:SetRenderOrigin(self:GetPos() + self:GetUp() * (WHEEL_OFFSET.z + DRAW_WHEEL_OFFSET))
+	end
 end
