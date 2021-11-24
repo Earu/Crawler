@@ -1,0 +1,13 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/crawler/body"
+	"$additive" "1"
+	"$translucent" "1"
+	"$halflambert" "1"
+	"$envmap" "env_cubemap"
+	"$envmapcontrast" "1"
+
+
+	"$blendtintbybasealpha" "1" 
+ 	"$blendtintcoloroverbase" "0"
+}

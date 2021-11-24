@@ -1,0 +1,5 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/crawler/power_cell_illum"
+	"$selfillum" 1
+}

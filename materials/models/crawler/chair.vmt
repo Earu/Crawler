@@ -1,0 +1,12 @@
+"VertexLitGeneric"
+{
+	"$basetexture" "models/crawler/chair"
+	"$surfaceprop" "metal"
+	"$bumpmap" "models/crawler/chair_normal"
+	"$envmap" "env_cubemap"
+	"$halflambert" 1
+	"$envmaptint" "[ .1 .1 .1 ]"
+
+	"$blendtintbybasealpha" "1" 
+ 	"$blendtintcoloroverbase" "0"
+}
