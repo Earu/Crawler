@@ -22,6 +22,7 @@ end
 list.Set("Vehicles", "crawler", ENT)
 local WHEEL_OFFSET = Vector(0, 0, 10)
 local WHEEL_ANGLE_OFFSET = Angle(90, 90, 0)
+local ENERGY_COLOR = Color(0, 255, 255)
 
 function ENT:GetDriver()
 	return self:GetNWEntity("Driver", NULL)
@@ -36,19 +37,23 @@ if SERVER then
 	ENT.LastComputedRollTime = 0
 	ENT.CurrentRollVariation = 0
 	ENT.WheelLoopStopTime = 0
+	ENT.LatestVelLen = 0
+	ENT.LatestVelDiff = 0
 
-	local CVAR_FASTDL = CreateConVar("crawler_fastdl", "0", FCVAR_ARCHIVE, "Should clients download content for crawlers on join or not")
+	local CVAR_FASTDL = CreateConVar("crawler_fastdl", "1", FCVAR_ARCHIVE, "Should clients download content for crawlers on join or not")
 
 	local function add_resource_dir(dir)
-		for _,f in pairs(file.Find(dir .. "/*","GAME")) do
+		for _, f in pairs(file.Find(dir .. "/*","GAME")) do
 			local path = dir .. "/" .. f
-			resource.AddFile(path)
+			resource.AddSingleFile(path)
 		end
 	end
 
 	if CVAR_FASTDL:GetBool() then
+		resource.AddSingleFile("materials/entities/crawler.png")
+
 		add_resource_dir("sound/crawler")
-		add_resource_dir("materials/models/crawler/monowheel")
+		add_resource_dir("materials/models/crawler")
 		add_resource_dir("models/crawler")
 	end
 
@@ -76,6 +81,7 @@ if SERVER then
 		self.Seat:SetUseType(SIMPLE_USE)
 		self.Seat:SetParent(self)
 		self.Seat:Spawn()
+		self.Seat:SetNoDraw(true)
 
 		self.BikeModel = ents.Create("prop_physics")
 		self.BikeModel:SetModel("models/crawler/monowheel.mdl")
@@ -89,15 +95,16 @@ if SERVER then
 		if IsValid(bike_phys) then
 			bike_phys:SetMass(1)
 			bike_phys:SetMaterial("gmod_silent")
-			bike_phys:AddGameFlag(FVPHYSICS_NO_PLAYER_PICKUP)
+			--bike_phys:AddGameFlag(FVPHYSICS_NO_PLAYER_PICKUP)
 		end
 
 		self.Wheel = ents.Create("prop_physics")
-		self.Wheel:SetModel("models/hunter/tubes/tube2x2x025.mdl")
-		self.Wheel:SetMaterial("models/props_combine/portalball001_sheet")
+		self.Wheel:SetModel("models/crawler/energy_wheel.mdl")
+		--self.Wheel:SetMaterial("models/props_combine/portalball001_sheet")
 		self.Wheel:SetPos(self:GetPos() + WHEEL_OFFSET)
 		self.Wheel:SetAngles(self:GetAngles() + WHEEL_ANGLE_OFFSET)
 		self.Wheel:Spawn()
+		self.Wheel:SetColor(ENERGY_COLOR)
 		self:SetNWEntity("Wheel", self.Wheel)
 
 		local old_bounds = self.Wheel:OBBMaxs()
@@ -165,6 +172,11 @@ if SERVER then
 			if veh ~= self.Seat then return end
 			table.insert(self.Filter, ply)
 			self:SetNWEntity("Driver", ply)
+
+			self.EngineLoop = CreateSound(self, "crawler/engine_loop.wav")
+			self.EngineLoop:ChangeVolume(10)
+			self.EngineLoop:ChangePitch(180)
+			self.EngineLoop:Play()
 		end)
 
 		hook.Add("PlayerLeaveVehicle", self, function(_, ply, veh)
@@ -173,15 +185,22 @@ if SERVER then
 			table.remove(self.Filter, #self.Filter)
 			self:SetNWEntity("Driver", NULL)
 
-			key_handler(ply, IN_FORWARD, false)
-			key_handler(ply, IN_BACK, false)
-			key_handler(ply, IN_MOVELEFT, false)
-			key_handler(ply, IN_MOVERIGHT, false)
+			self.Forward = false
+			self.Backward = false
+			self.Left = false
+			self.Right = false
+			self.Turbo = false
 
-			timer.Simple(0, function()
+			timer.Simple(0.1, function()
 				if not self:IsValid() or not ply:IsValid() then return end
 				ply:ExitVehicle()
 				ply:SetPos(self:FindSpace(ply))
+				ply:SetEyeAngles((self:GetPos() + self:GetForward() * 400 - ply:EyePos()):Angle())
+
+				if self.EngineLoop then
+					self.EngineLoop:Stop()
+					self.EngineLoop = nil
+				end
 			end)
 		end)
 
@@ -351,7 +370,7 @@ if SERVER then
 	local DAMP_FACTOR = 1.00001
 	local VECTOR_UP = Vector(0, 0, 1)
 	local ANGLE_VEL_MULT = 100
-	local VEL_MULT = 500
+	local VEL_MULT = 400
 	local DOWNWARD_FORCE = -600
 	local MIN_VEL_FOR_SOUND = 10
 	function ENT:Think()
@@ -466,25 +485,7 @@ if SERVER then
 				phys_wheel:AddVelocity(-cur_vel / 2 * DAMP_FACTOR)
 			end
 
-			local final_ang_vel = phys_wheel:GetAngleVelocity()
-			if math.abs(final_ang_vel.z) > MIN_VEL_FOR_SOUND then
-				if not self.WheelLoop then
-					self.WheelLoop = CreateSound(self,"crawler/wheel_loop.wav")
-					self.WheelLoop:Play()
-				end
-
-				self.WheelLoopStopTime = nil
-				self.WheelLoop:ChangePitch(20 + math.min(math.abs(final_ang_vel.z) / 200, 200))
-			end
-
-			if self.WheelLoop and math.abs(final_ang_vel.z) < MIN_VEL_FOR_SOUND then
-				if not self.WheelLoopStopTime then
-					self.WheelLoopStopTime = CurTime() + 0.5
-				elseif self.WheelLoopStopTime >= CurTime() then
-					self.WheelLoop:Stop()
-					self.WheelLoop = nil
-				end
-			end
+			self:ProcessSounds(phys_wheel)
 		end
 
 		self:NextThink(CurTime())
@@ -492,10 +493,43 @@ if SERVER then
 		return true
 	end
 
+	function ENT:ProcessSounds(phys_wheel)
+		local final_ang_vel = phys_wheel:GetAngleVelocity()
+		if math.abs(final_ang_vel.z) > MIN_VEL_FOR_SOUND then
+			if not self.WheelLoop then
+				self.WheelLoop = CreateSound(self, "crawler/wheel_loop.wav")
+				self.WheelLoop:Play()
+			end
+
+			self.WheelLoopStopTime = nil
+			self.WheelLoop:ChangePitch(20 + math.min(math.abs(final_ang_vel.z) / 200, 200))
+		end
+
+		if self.WheelLoop and math.abs(final_ang_vel.z) < MIN_VEL_FOR_SOUND then
+			if not self.WheelLoopStopTime then
+				self.WheelLoopStopTime = CurTime() + 0.5
+			elseif self.WheelLoopStopTime >= CurTime() then
+				self.WheelLoop:Stop()
+				self.WheelLoop = nil
+			end
+		end
+
+		local len = phys_wheel:GetVelocity():Length()
+		if self.EngineLoop then
+			self.EngineLoop:ChangePitch(100 + math.min(len / 20, 100))
+			self.EngineLoop:ChangeVolume(0.1 + math.max((len - 300) / 250 / 10, 0), 0)
+		end
+	end
+
 	function ENT:OnRemove()
 		if self.WheelLoop then
 			self.WheelLoop:Stop()
 			self.WheelLoop = nil
+		end
+
+		if self.EngineLoop then
+			self.EngineLoop:Stop()
+			self.EngineLoop = nil
 		end
 	end
 
@@ -531,39 +565,17 @@ if CLIENT then
 	function ENT:Initialize()
 	end
 
-	hook.Add("HUDPaint", "crawler", function()
-		local ply = LocalPlayer()
-		if not ply:InVehicle() then return end
-
-		local parent = ply:GetVehicle():GetParent()
-		if not IsValid(parent) then return end
-		if parent:GetClass() ~= "crawler" then return end
-
-		local left = (parent:GetPos() + -parent:GetRight() * 18):ToScreen()
-		local left_forward = (parent:GetPos() + -parent:GetRight() * 18 + parent:GetForward() * 200):ToScreen()
-		local right = (parent:GetPos() + parent:GetRight() * 18):ToScreen()
-		local right_forward = (parent:GetPos() + parent:GetRight() * 18 + parent:GetForward() * 200):ToScreen()
-
-
-		surface.SetDrawColor(0, 255, 0, 255)
-		surface.DrawLine(left.x, left.y, left_forward.x, left_forward.y)
-		surface.DrawLine(right.x, right.y, right_forward.x, right_forward.y)
-		surface.DrawLine(left.x, left.y, right.x, right.y)
-		surface.DrawLine(left_forward.x, left_forward.y, right_forward.x, right_forward.y)
-	end)
-
-	local debugwhite = Material("models/props_combine/portalball001_sheet")
+	local sprite_mat = Material("sprites/glow04_noz")
 	function ENT:Draw()
-		local wheel = self:GetNWEntity("Wheel")
-		if not IsValid(wheel) then return end
+		local pos = self:GetPos()
+		local size = (self:GetVelocity():Length()) * 2 / 100
 
-		render.SetLightingMode(2)
-		render.MaterialOverride(debugwhite)
-		render.SetColorModulation(0, 1, 0)
-		wheel:DrawModel()
-		render.SetColorModulation(1, 1, 1)
-		render.MaterialOverride()
-		render.SetLightingMode(0)
+		render.SetMaterial(sprite_mat)
+		render.DrawSprite(pos + -self:GetForward() * 43 + self:GetRight() * 22, size, size, ENERGY_COLOR)
+		render.DrawSprite(pos + -self:GetForward() * 40 + self:GetRight() * 19 + self:GetUp() * 5, size, size, ENERGY_COLOR)
+
+		render.DrawSprite(pos + -self:GetForward() * 45 + -self:GetRight() * 22, size, size, ENERGY_COLOR)
+		render.DrawSprite(pos + -self:GetForward() * 43 + -self:GetRight() * 19 + self:GetUp() * 5, size, size, ENERGY_COLOR)
 	end
 
 	local DRAW_WHEEL_OFFSET = 3
