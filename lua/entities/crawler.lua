@@ -75,13 +75,14 @@ if SERVER then
 		end
 
 		self.Seat = ents.Create("prop_vehicle_prisoner_pod")
-		self.Seat:SetModel("models/nova/jalopy_seat.mdl")
-		self.Seat:SetPos(self:GetPos() + self:GetForward() * -25 + Vector(0, 0, -13))
+		self.Seat:SetModel("models/nova/airboat_seat.mdl")
+		self.Seat:SetPos(self:GetPos() + self:GetForward() * -29 + Vector(0, 0, -9))
 		self.Seat:SetAngles(self:GetAngles() - Angle(0, 90, 0))
 		self.Seat:SetUseType(SIMPLE_USE)
 		self.Seat:SetParent(self)
 		self.Seat:Spawn()
 		self.Seat:SetNoDraw(true)
+		self.Seat:SetVehicleClass("phx_seat3")
 
 		self.BikeModel = ents.Create("prop_physics")
 		self.BikeModel:SetModel("models/crawler/monowheel.mdl")
