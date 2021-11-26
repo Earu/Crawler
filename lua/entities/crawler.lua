@@ -14,6 +14,7 @@ ENT.Information = "Highly adaptable monowheel vehicle"
 ENT.Name = "Crawler"
 ENT.Class = "crawler"
 ENT.AdminSpawnable = false
+ENT.EnergyColor = Color(0, 255, 255)
 
 for _, f in pairs(file.Find("sound/crawler/*", "GAME")) do
 	util.PrecacheSound("sound/crawler/" .. f)
@@ -22,11 +23,62 @@ end
 list.Set("Vehicles", "crawler", ENT)
 local WHEEL_OFFSET = Vector(0, 0, 10)
 local WHEEL_ANGLE_OFFSET = Angle(90, 90, 0)
-local ENERGY_COLOR = Color(0, 255, 255)
 
 function ENT:GetDriver()
 	return self:GetNWEntity("Driver", NULL)
 end
+
+properties.Add("energy_color", {
+	MenuLabel = "Energy Color",
+	Order = 2e9,
+	MenuIcon = "icon16/color_wheel.png",
+	Filter = function( self, ent, ply )
+		if not IsValid(ent) then return false end
+		if ent:IsPlayer() then return false end
+
+		local parent = ent:GetParent()
+		if not IsValid(parent) then return false end
+		return parent:GetClass() == "crawler"
+	end,
+	Action = function(self, ent)
+		local parent = ent:GetParent()
+		local col = parent.EnergyColor
+
+		local frame = vgui.Create("DFrame")
+		frame:SetSize(250, 200)
+		frame:Center()
+		frame:MakePopup()
+		frame:SetTitle(tostring(parent))
+		frame.OnClose = function()
+			if not IsValid(ent) then return end
+
+			parent.EnergyColor = col
+			self:MsgStart()
+				net.WriteEntity(ent)
+				net.WriteTable(col)
+			self:MsgEnd()
+		end
+
+		local color_combo = vgui.Create("DColorCombo", frame)
+		color_combo:Dock(FILL)
+		color_combo:SetColor(col)
+		function color_combo:OnValueChanged(c)
+			col = Color(c.r, c.g, c.b, c.a)
+		end
+	end,
+	Receive = function(self, length, ply)
+		local ent = net.ReadEntity()
+		local col = net.ReadTable()
+
+		if not properties.CanBeTargeted(ent, ply) then return end
+		if not self:Filter(ent, ply) then return end
+
+		local parent = ent:GetParent()
+		parent.EnergyColor = col
+		parent.Wheel:SetColor(col)
+		parent:SetupTrails()
+	end
+} )
 
 if SERVER then
 	ENT.Forward = false
@@ -55,6 +107,33 @@ if SERVER then
 		add_resource_dir("sound/crawler")
 		add_resource_dir("materials/models/crawler")
 		add_resource_dir("models/crawler")
+	end
+
+	function ENT:SetupTrails()
+		if self.Trails and #self.Trails > 0 then
+			for _, trail in ipairs(self.Trails) do
+				SafeRemoveEntity(trail)
+			end
+		end
+
+		self.Trails = {}
+		local pos = self:GetPos()
+		local trail_offsets = {
+			pos + -self:GetForward() * 43 + self:GetRight() * 22,
+			pos + -self:GetForward() * 40 + self:GetRight() * 19 + self:GetUp() * 5,
+			pos + -self:GetForward() * 45 + -self:GetRight() * 22,
+			pos + -self:GetForward() * 43 + -self:GetRight() * 19 + self:GetUp() * 5
+		}
+
+		for _, offset in ipairs(trail_offsets) do
+			local trail = ents.Create("crawler_trail")
+			trail:SetPos(offset)
+			trail:SetParent(self)
+			trail:Spawn()
+			trail:SetTrail(32, 0, 0.1, self.EnergyColor)
+
+			table.insert(self.Trails, trail)
+		end
 	end
 
 	function ENT:Initialize()
@@ -105,7 +184,7 @@ if SERVER then
 		self.Wheel:SetPos(self:GetPos() + WHEEL_OFFSET)
 		self.Wheel:SetAngles(self:GetAngles() + WHEEL_ANGLE_OFFSET)
 		self.Wheel:Spawn()
-		self.Wheel:SetColor(ENERGY_COLOR)
+		self.Wheel:SetColor(self.EnergyColor)
 		self:SetNWEntity("Wheel", self.Wheel)
 
 		local old_bounds = self.Wheel:OBBMaxs()
@@ -121,6 +200,8 @@ if SERVER then
 			phys_wheel:AddGameFlag(FVPHYSICS_NO_PLAYER_PICKUP)
 			phys_wheel:Wake()
 		end
+
+		self:SetupTrails()
 
 		local function apply_ownership()
 			local owner = self.CPPIGetOwner and self:CPPIGetOwner() or self:GetOwner()
@@ -572,11 +653,11 @@ if CLIENT then
 		local size = (self:GetVelocity():Length()) * 2 / 100
 
 		render.SetMaterial(sprite_mat)
-		render.DrawSprite(pos + -self:GetForward() * 43 + self:GetRight() * 22, size, size, ENERGY_COLOR)
-		render.DrawSprite(pos + -self:GetForward() * 40 + self:GetRight() * 19 + self:GetUp() * 5, size, size, ENERGY_COLOR)
+		render.DrawSprite(pos + -self:GetForward() * 43 + self:GetRight() * 22, size, size, self.EnergyColor)
+		render.DrawSprite(pos + -self:GetForward() * 40 + self:GetRight() * 19 + self:GetUp() * 5, size, size, self.EnergyColor)
 
-		render.DrawSprite(pos + -self:GetForward() * 45 + -self:GetRight() * 22, size, size, ENERGY_COLOR)
-		render.DrawSprite(pos + -self:GetForward() * 43 + -self:GetRight() * 19 + self:GetUp() * 5, size, size, ENERGY_COLOR)
+		render.DrawSprite(pos + -self:GetForward() * 45 + -self:GetRight() * 22, size, size, self.EnergyColor)
+		render.DrawSprite(pos + -self:GetForward() * 43 + -self:GetRight() * 19 + self:GetUp() * 5, size, size, self.EnergyColor)
 	end
 
 	local DRAW_WHEEL_OFFSET = 3
