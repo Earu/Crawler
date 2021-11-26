@@ -1,5 +1,12 @@
 "VertexLitGeneric"
 {
 	"$basetexture" "models/crawler/screen"
-	"$selfillum" 1
+
+	"$detail" "models/crawler/screen"
+	"$detailscale" "1"
+	"$detailblendfactor" "1"
+	"$detailblendmode" "5"
+
+	"$blendtintbybasealpha" "1" 
+	"$blendtintcoloroverbase" "0"
 }
