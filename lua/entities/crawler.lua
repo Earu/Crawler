@@ -163,12 +163,10 @@ if SERVER then
 		self.Seat:SetNoDraw(true)
 		self.Seat:SetVehicleClass("phx_seat3")
 
-		self.BikeModel = ents.Create("prop_physics")
-		self.BikeModel:SetModel("models/crawler/monowheel.mdl")
+		self.BikeModel = ents.Create("crawler_body")
 		self.BikeModel:SetPos(self:GetPos())
 		self.BikeModel:SetAngles(self:GetAngles())
 		self.BikeModel:SetParent(self)
-		self.BikeModel:SetUseType(SIMPLE_USE)
 		self.BikeModel:Spawn()
 
 		local bike_phys = self.BikeModel:GetPhysicsObject()
