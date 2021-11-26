@@ -54,6 +54,7 @@ if CLIENT then
 		self.Bike = self:GetParent()
 
 		self.GizmoModel = self.GizmoModel or ClientsideModel("models/crawler/gizmo.mdl")
+		self.GizmoModel:SetNoDraw(true)
 	end
 
 	function ENT:Draw()
