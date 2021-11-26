@@ -2,13 +2,17 @@
 {
 	"$basetexture" "models/crawler/body_colorable"
 	"$surfaceprop" "metal"
+	"$model" 1
+	"$HalfLambert" 1
+
 	"$bumpmap" "models/crawler/body_normal"
 	"$envmap" "env_cubemap"
+
 	"$normalmapalphaenvmapmask" 1
-	"$envmapcontrast" 0.2
+	"$envmapcontrast" 0.5
 	"$envmapsaturation" 0
-	"$envmaptint" "[ 1 1 1 ]"
-	"$model" 1
+	"$envmaptint" "[ 0.6 0.6 0.6 ]"
+
 	
 	"$blendtintbybasealpha" "1" 
  	"$blendtintcoloroverbase" "0"
@@ -20,7 +24,5 @@
 
 	"$rimlight" "1"
 	"$rimlightboost" "5"
-	"$rimlightexponent" "3"	
-
-	"$HalfLambert" 1
+	"$rimlightexponent" "3"
 }
