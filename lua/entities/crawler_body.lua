@@ -9,10 +9,16 @@ if SERVER then
 	function ENT:Initialize()
 		self:SetModel("models/crawler/monowheel.mdl")
 		self:SetUseType(SIMPLE_USE)
-
 		self:SetMoveType(MOVETYPE_VPHYSICS)
-		self:SetSolid(SOLID_VPHYSICS)
-		self:PhysicsInit(SOLID_VPHYSICS)
+
+		-- perfect combination for the player to be able to use this enter the vehicle
+		-- AND to NOT block the third person vehicle camera
+		do
+			self:SetCollisionGroup(COLLISION_GROUP_PASSABLE_DOOR)
+			self:SetCollisionBounds(Vector(-18, -20, 1), Vector(18, 35, 1))
+			self:SetSolid(SOLID_BBOX)
+			self:PhysicsInit(SOLID_BBOX)
+		end
 	end
 end
 
