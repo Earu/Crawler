@@ -15,7 +15,7 @@ if SERVER then
 		-- AND to NOT block the third person vehicle camera
 		do
 			self:SetCollisionGroup(COLLISION_GROUP_PASSABLE_DOOR)
-			self:SetCollisionBounds(Vector(-18, -20, 1), Vector(18, 35, 1))
+			self:SetCollisionBounds(Vector(-18, -35, -1), Vector(18, 35, 10))
 			self:SetSolid(SOLID_BBOX)
 			self:PhysicsInit(SOLID_BBOX)
 		end
