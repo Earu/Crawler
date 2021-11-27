@@ -285,7 +285,7 @@ if SERVER then
 		end)
 
 		hook.Add("PlayerUse", self, function(_, ply, ent)
-			if ent == self.BikeModel and IsValid(self.Seat) and not ply:InVehicle() then
+			if ent == self.BikeModel or ent == self.Wheel or ent == self and IsValid(self.Seat) and not ply:InVehicle() then
 				ply:EnterVehicle(self.Seat)
 			end
 		end)
