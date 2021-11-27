@@ -137,7 +137,7 @@ if SERVER then
 	end
 
 	function ENT:Initialize()
-		self:SetModel("models/sprops/rectangles/size_4/rect_36x72x3.mdl")
+		self:SetModel("models/crawler/base.mdl")
 		self:PhysicsInit(SOLID_VPHYSICS)
 		self:SetMoveType(MOVETYPE_VPHYSICS)
 		self:SetSolid(SOLID_VPHYSICS)
