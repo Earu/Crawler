@@ -86,6 +86,7 @@ if SERVER then
 	ENT.Left = false
 	ENT.Right = false
 	ENT.Turbo = false
+	ENT.Drop = false
 	ENT.LastComputedRollTime = 0
 	ENT.CurrentRollVariation = 0
 	ENT.WheelLoopStopTime = 0
@@ -243,6 +244,7 @@ if SERVER then
 			if key == IN_MOVELEFT then self.Left = pressed end
 			if key == IN_MOVERIGHT then self.Right = pressed end
 			if key == IN_SPEED then self.Turbo = pressed end
+			if key == IN_JUMP then self.Drop = pressed end
 		end
 
 		hook.Add("KeyPress", self, function(_, ply, key) key_handler(ply, key, true) end)
@@ -327,7 +329,7 @@ if SERVER then
 	end
 
 	local MAX_ROLL_VARIATION = 30
-	local ROLL_VARIATION = MAX_ROLL_VARIATION * MAX_ROLL_VARIATION
+	local ROLL_VARIATION = 1
 	function ENT:ComputeTurningRoll()
 		local now = CurTime()
 		local delta = now - self.LastComputedRollTime
@@ -335,19 +337,19 @@ if SERVER then
 		if not self:InWater() then
 			if (self.Right and self.Left) or (not self.Right and not self.Left) then
 				if self.CurrentRollVariation > 0 then
-					self.CurrentRollVariation = math.max(self.CurrentRollVariation - (ROLL_VARIATION * delta), 0)
+					self.CurrentRollVariation = math.max(self.CurrentRollVariation - (ROLL_VARIATION / delta), 0)
 				elseif self.CurrentRollVariation < 0 then
-					self.CurrentRollVariation = math.min(self.CurrentRollVariation + (ROLL_VARIATION * delta), 0)
+					self.CurrentRollVariation = math.min(self.CurrentRollVariation + (ROLL_VARIATION / delta), 0)
 				else
 					self.CurrentRollVariation = 0
 				end
 			else
 				if self.Right then
-					self.CurrentRollVariation = math.min(self.CurrentRollVariation + (ROLL_VARIATION * delta), MAX_ROLL_VARIATION)
+					self.CurrentRollVariation = math.min(self.CurrentRollVariation + (ROLL_VARIATION / delta), MAX_ROLL_VARIATION)
 				end
 
 				if self.Left then
-					self.CurrentRollVariation = math.max(self.CurrentRollVariation - (ROLL_VARIATION * delta), -MAX_ROLL_VARIATION)
+					self.CurrentRollVariation = math.max(self.CurrentRollVariation - (ROLL_VARIATION / delta), -MAX_ROLL_VARIATION)
 				end
 			end
 		else
@@ -372,7 +374,11 @@ if SERVER then
 
 		ang_vel.y = ang_vel.y + pitch_vel
 		ang_vel.z = ang_vel.z + yaw_vel
-		ang_vel.x = ang_vel.x + roll_vel + self:ComputeTurningRoll()
+
+		-- in the air or on walls, prevents jittering
+		if not self:IsOnWall() or not self:IsOnSurface() then
+			ang_vel.x = ang_vel.x + roll_vel + self:ComputeTurningRoll()
+		end
 
 		return ang_vel
 	end
@@ -450,7 +456,7 @@ if SERVER then
 	local DAMP_FACTOR = 1.00001
 	local VECTOR_UP = Vector(0, 0, 1)
 	local ANGLE_VEL_MULT = 100
-	local VEL_MULT = 400
+	local VEL_MULT = 300
 	local DOWNWARD_FORCE = -600
 	local MIN_VEL_FOR_SOUND = 10
 	function ENT:Think()
@@ -461,19 +467,30 @@ if SERVER then
 		if not IsValid(phys) or not IsValid(phys_wheel) then return end
 
 		-- enable back gravity for jumping, falling etc
-		if not self:IsOnSurface() then
+		if not self:IsOnSurface() or self.Drop then
 			phys:EnableGravity(true)
 			phys:SetMass(500)
 			phys_wheel:EnableGravity(true)
 
 			-- this stabilizes the vehicle when jumping or falling, preventing the vomit inducing rotations
 			local ang = self:GetAngles()
-			ang.pitch = self:GetForward():Angle().pitch
-
 			local ang_vel = self:ComputeAngularVelocity(phys, ang)
 			ang_vel:Mul(20)
 			ang_vel:Sub(phys:GetAngleVelocity())
 			phys:AddAngleVelocity(ang_vel)
+
+			if self.Forward then
+				phys:ApplyForceOffset(self:GetUp() * VEL_MULT * 10, self:GetPos() + self:GetForward() * -PLATE_FORWARD_LENGTH)
+				phys:ApplyForceOffset(-self:GetUp() * VEL_MULT * 10, self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH)
+				phys_wheel:AddVelocity(self:GetForward() * VEL_MULT * 4)
+			end
+
+			if self.Backward then
+				phys:ApplyForceOffset(-self:GetUp() * VEL_MULT * 10, self:GetPos() + self:GetForward() * -PLATE_FORWARD_LENGTH)
+				phys:ApplyForceOffset(self:GetUp() * VEL_MULT * 10, self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH)
+				phys_wheel:AddVelocity(-self:GetForward() * VEL_MULT * 4)
+			end
+
 			return
 		end
 
@@ -505,9 +522,9 @@ if SERVER then
 					local m = Matrix()
 					m:Rotate(diff_ang)
 
-					if self:OnWall() then
+					if self:IsOnWall() then
 						m:SetRight(self.Wheel:GetUp())
-						m:SetForward(-self:GetForward()) -- this makes it less shaky when going up and down
+						--m:SetForward(-self:GetForward()) -- this makes it less shaky when going up and down
 					end
 
 					m:SetUp(self:GetUp())
@@ -527,28 +544,27 @@ if SERVER then
 
 			local final_linear_vel_mult = VEL_MULT
 			if self.Turbo then final_linear_vel_mult = VEL_MULT + 200 end -- add extra velocity for turbo
+			local final_angular_vel_mult = VEL_MULT * 1.5
+			if not self:IsOnSurface() then final_angular_vel_mult = VEL_MULT * 1.5 end -- add extra velocity for jumping
 
 			if self.Forward then
-				phys_wheel:AddAngleVelocity(VECTOR_UP * ANGLE_VEL_MULT)
 				phys_wheel:AddVelocity(self:GetForward() * final_linear_vel_mult)
-
-				-- this should push harder on walls when going up or down
-				if self:OnWall() then
-					phys_wheel:AddVelocity(self:GetForward() * final_linear_vel_mult * 0.8)
-				end
+				phys_wheel:AddAngleVelocity(VECTOR_UP * ANGLE_VEL_MULT)
 			end
 
 			if self.Backward then
-				phys_wheel:AddAngleVelocity(VECTOR_UP * -ANGLE_VEL_MULT)
 				phys_wheel:AddVelocity(self:GetForward() * -final_linear_vel_mult)
-			end
-
-			if self.Right then
-				phys_wheel:ApplyForceOffset(-self.Wheel:GetUp() * VEL_MULT * 1.5, self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH)
+				phys_wheel:AddAngleVelocity(VECTOR_UP * -ANGLE_VEL_MULT)
 			end
 
 			if self.Left then
-				phys_wheel:ApplyForceOffset(self.Wheel:GetUp() * VEL_MULT * 1.5, self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH)
+				phys_wheel:ApplyForceOffset(-self.Wheel:GetUp() * final_angular_vel_mult, self:GetPos() + self:GetForward() * -PLATE_FORWARD_LENGTH)
+				phys_wheel:ApplyForceOffset(self.Wheel:GetUp() * final_angular_vel_mult, self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH)
+			end
+
+			if self.Right then
+				phys_wheel:ApplyForceOffset(self.Wheel:GetUp() * final_angular_vel_mult, self:GetPos() + self:GetForward() * -PLATE_FORWARD_LENGTH)
+				phys_wheel:ApplyForceOffset(-self.Wheel:GetUp() * final_angular_vel_mult, self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH)
 			end
 
 			local going_left = self.Left and 1 or 0
@@ -622,8 +638,13 @@ if SERVER then
 	end
 
 	local MIN_WALL_PITCH = 50
-	function ENT:OnWall()
-		return math.abs(self:GetAngles().pitch) > MIN_WALL_PITCH
+	function ENT:IsOnWall()
+		local cur_ang = self:GetAngles()
+		local pitch,roll = math.abs(cur_ang.pitch), math.abs(cur_ang.roll)
+		if pitch > MIN_WALL_PITCH then return true end
+		if roll > 85 and roll < 115 then return true end
+
+		return false
 	end
 
 	function ENT:IsOnSurface()
