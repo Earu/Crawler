@@ -38,7 +38,10 @@ properties.Add("energy_color", {
 
 		local parent = ent:GetParent()
 		if not IsValid(parent) then return false end
-		return parent:GetClass() == "crawler"
+		if parent:GetClass() ~= "crawler" then return false end
+		if not gamemode.Call("CanProperty", ply, "energy_color", parent) then return false end
+
+		return true
 	end,
 	Action = function(self, ent)
 		local parent = ent:GetParent()
@@ -78,7 +81,7 @@ properties.Add("energy_color", {
 		parent.Wheel:SetColor(col)
 		parent:SetupTrails()
 	end
-} )
+})
 
 if SERVER then
 	ENT.Forward = false
