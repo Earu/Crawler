@@ -323,7 +323,6 @@ if SERVER then
 	end)
 
 	hook.Add("EntityEmitSound", "crawler", function(data)
-		print(data.Entity, data.Entity.Crawler)
 		if IsValid(data.Entity) and IsValid(data.Entity.Crawler) and data.Entity.Crawler.Wheel == data.Entity then return false end
 	end)
 
