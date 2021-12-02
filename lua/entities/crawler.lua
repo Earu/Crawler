@@ -166,12 +166,14 @@ if SERVER then
 		self.Seat:Spawn()
 		self.Seat:SetNoDraw(true)
 		self.Seat:SetVehicleClass("phx_seat3")
+		self.Seat.Crawler = self
 
 		self.BikeModel = ents.Create("crawler_body")
 		self.BikeModel:SetPos(self:GetPos())
 		self.BikeModel:SetAngles(self:GetAngles())
 		self.BikeModel:SetParent(self)
 		self.BikeModel:Spawn()
+		self.BikeModel.Crawler = self
 
 		local bike_phys = self.BikeModel:GetPhysicsObject()
 		if IsValid(bike_phys) then
@@ -188,6 +190,7 @@ if SERVER then
 		self.Wheel:Spawn()
 		self.Wheel:SetColor(self.EnergyColor)
 		self:SetNWEntity("Wheel", self.Wheel)
+		self.Wheel.Crawler = self
 
 		local old_bounds = self.Wheel:OBBMaxs()
 		self.Wheel:PhysicsInitSphere(50)
@@ -238,71 +241,91 @@ if SERVER then
 		end)
 
 		self.Filter = { self, self.Seat, self.Wheel, self.BikeModel }
+	end
 
-		local function key_handler(ply, key, pressed)
-			if ply ~= self:GetDriver() then return end
+	function ENT:ControlHandler(ply, key, pressed)
+		if ply ~= self:GetDriver() then return end
 
-			if key == IN_FORWARD then self.Forward = pressed end
-			if key == IN_BACK then self.Backward = pressed end
-			if key == IN_MOVELEFT then self.Left = pressed end
-			if key == IN_MOVERIGHT then self.Right = pressed end
-			if key == IN_SPEED then self.Turbo = pressed end
-			if key == IN_JUMP then self.Drop = pressed end
-		end
+		if key == IN_FORWARD then self.Forward = pressed end
+		if key == IN_BACK then self.Backward = pressed end
+		if key == IN_MOVELEFT then self.Left = pressed end
+		if key == IN_MOVERIGHT then self.Right = pressed end
+		if key == IN_SPEED then self.Turbo = pressed end
+		if key == IN_JUMP then self.Drop = pressed end
+	end
 
-		hook.Add("KeyPress", self, function(_, ply, key) key_handler(ply, key, true) end)
-		hook.Add("KeyRelease", self, function(_, ply, key) key_handler(ply, key, false) end)
+	local function handle_keys(ply, key, pressed)
+		if not ply:InVehicle() then return end
 
-		hook.Add("PlayerEnteredVehicle", self, function(_, ply, veh)
-			if veh ~= self.Seat then return end
-			table.insert(self.Filter, ply)
-			self:SetNWEntity("Driver", ply)
+		local veh = ply:GetVehicle()
+		if not IsValid(veh.Crawler) then return end
 
-			self.EngineLoop = CreateSound(self, "crawler/engine_loop.wav")
-			self.EngineLoop:ChangeVolume(10)
-			self.EngineLoop:ChangePitch(180)
-			self.EngineLoop:Play()
-		end)
+		veh.Crawler:ControlHandler(ply, key, pressed)
+	end
 
-		hook.Add("PlayerLeaveVehicle", self, function(_, ply, veh)
-			if veh ~= self.Seat then return end
+	hook.Add("KeyPress", "crawler", function(ply, key) handle_keys(ply, key, true) end)
+	hook.Add("KeyRelease", "crawler", function(ply, key) handle_keys(ply, key, false) end)
 
-			table.remove(self.Filter, #self.Filter)
-			self:SetNWEntity("Driver", NULL)
+	hook.Add("PlayerEnteredVehicle", "crawler", function(ply, veh)
+		if not IsValid(veh.Crawler) then return end
 
-			self.Forward = false
-			self.Backward = false
-			self.Left = false
-			self.Right = false
-			self.Turbo = false
+		local crawler = veh.Crawler
+		table.insert(crawler.Filter, ply)
+		crawler:SetNWEntity("Driver", ply)
 
-			timer.Simple(0.1, function()
-				if not self:IsValid() or not ply:IsValid() then return end
-				ply:ExitVehicle()
-				ply:SetPos(self:FindSpace(ply))
-				ply:SetEyeAngles((self:GetPos() + self:GetForward() * 400 - ply:EyePos()):Angle())
+		crawler.EngineLoop = CreateSound(crawler, "crawler/engine_loop.wav")
+		crawler.EngineLoop:ChangeVolume(10)
+		crawler.EngineLoop:ChangePitch(180)
+		crawler.EngineLoop:Play()
+	end)
 
-				if self.EngineLoop then
-					self.EngineLoop:Stop()
-					self.EngineLoop = nil
-				end
-			end)
-		end)
+	hook.Add("PlayerLeaveVehicle", "crawler", function(ply, veh)
+		if not IsValid(veh.Crawler) then return end
 
-		hook.Add("PlayerUse", self, function(_, ply, ent)
-			if ent == self.BikeModel or ent == self.Wheel or ent == self and IsValid(self.Seat) and not ply:InVehicle() then
-				ply:EnterVehicle(self.Seat)
+		local crawler = veh.Crawler
+		table.remove(crawler.Filter, #crawler.Filter)
+		crawler:SetNWEntity("Driver", NULL)
+
+		crawler.Forward = false
+		crawler.Backward = false
+		crawler.Left = false
+		crawler.Right = false
+		crawler.Turbo = false
+
+		timer.Simple(0.1, function()
+			if not crawler:IsValid() or not ply:IsValid() then return end
+			ply:ExitVehicle()
+			ply:SetPos(crawler:FindSpace(ply))
+			ply:SetEyeAngles((crawler:GetPos() + crawler:GetForward() * 400 - ply:EyePos()):Angle())
+
+			if crawler.EngineLoop then
+				crawler.EngineLoop:Stop()
+				crawler.EngineLoop = nil
 			end
 		end)
+	end)
 
-		hook.Add("EntityEmitSound", self, function(_, data)
-			if data.Entity == self.Wheel then return false end
-		end)
+	hook.Add("PlayerUse", "crawler", function(ply, ent)
+		if ply:InVehicle() then return end
 
-		hook.Add("GravGunPickupAllowed", self, function(_, ent)
-			if ent == self or ent == self.Wheel or ent == self.Seat or ent == self.BikeModel then return false end
-		end)
-	end
+		if ent:GetClass() == "crawler" and IsValid(ent.Seat) then
+			ply:EnterVehicle(ent.Seat)
+			return
+		end
+
+		if IsValid(ent.Crawler) and IsValid(ent.Crawler.Seat) then
+			ply:EnterVehicle(ent.Crawler.Seat)
+		end
+	end)
+
+	hook.Add("GravGunPickupAllowed", "crawler", function(_, ent)
+		if ent:GetClass() == "crawler" or IsValid(ent.Crawler) then return false end
+	end)
+
+	hook.Add("EntityEmitSound", "crawler", function(data)
+		print(data.Entity, data.Entity.Crawler)
+		if IsValid(data.Entity) and IsValid(data.Entity.Crawler) and data.Entity.Crawler.Wheel == data.Entity then return false end
+	end)
 
 	function ENT:IsFreeSpace(vec, ply)
 		local maxs = ply:OBBMaxs()
