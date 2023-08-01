@@ -83,6 +83,8 @@ properties.Add("energy_color", {
 	end
 })
 
+
+
 if SERVER then
 	ENT.Forward = false
 	ENT.Backward = false
@@ -114,29 +116,13 @@ if SERVER then
 	end
 
 	function ENT:SetupTrails()
-		if self.Trails and #self.Trails > 0 then
-			for _, trail in ipairs(self.Trails) do
-				SafeRemoveEntity(trail)
-			end
-		end
-
-		self.Trails = {}
-		local pos = self:GetPos()
-		local trail_offsets = {
-			pos + -self:GetForward() * 43 + self:GetRight() * 22,
-			pos + -self:GetForward() * 40 + self:GetRight() * 19 + self:GetUp() * 5,
-			pos + -self:GetForward() * 45 + -self:GetRight() * 22,
-			pos + -self:GetForward() * 43 + -self:GetRight() * 19 + self:GetUp() * 5
-		}
-
-		for _, offset in ipairs(trail_offsets) do
-			local trail = ents.Create("crawler_trail")
-			trail:SetPos(offset)
-			trail:SetParent(self)
-			trail:Spawn()
-			trail:SetTrail(32, 0, 0.1, self.EnergyColor)
-
-			table.insert(self.Trails, trail)
+		self.Trails = self.Trails or {}
+		PrintTable(self.BikeModel:GetAttachments())
+		
+		for i = 1, 4 do
+			if IsValid(self.Trails[i]) then SafeRemoveEntity(self.Trails[i]) end
+			
+			self.Trails[i] = util.SpriteTrail(self.BikeModel, i, self.EnergyColor, true, 32, 0, 0.1, 0.015625, "trails/laser.vmt")
 		end
 	end
 
@@ -174,6 +160,7 @@ if SERVER then
 		self.BikeModel:SetParent(self)
 		self.BikeModel:Spawn()
 		self.BikeModel.Crawler = self
+		self:SetNWEntity("BikeModel", self.BikeModel)
 
 		local bike_phys = self.BikeModel:GetPhysicsObject()
 		if IsValid(bike_phys) then
@@ -186,6 +173,7 @@ if SERVER then
 		self.Wheel:SetModel("models/crawler/energy_wheel.mdl")
 		--self.Wheel:SetMaterial("models/props_combine/portalball001_sheet")
 		self.Wheel:SetPos(self:GetPos() + WHEEL_OFFSET)
+		self.Wheel.RenderGroup = RENDERGROUP_BOTH
 		self.Wheel:SetAngles(self:GetAngles() + WHEEL_ANGLE_OFFSET)
 		self.Wheel:Spawn()
 		self.Wheel:SetColor(self.EnergyColor)
@@ -305,18 +293,12 @@ if SERVER then
 		end)
 	end)
 
-	hook.Add("PlayerUse", "crawler", function(ply, ent)
-		if ply:InVehicle() then return end
-
-		if ent:GetClass() == "crawler" and IsValid(ent.Seat) then
-			ply:EnterVehicle(ent.Seat)
-			return
-		end
-
-		if IsValid(ent.Crawler) and IsValid(ent.Crawler.Seat) then
-			ply:EnterVehicle(ent.Crawler.Seat)
-		end
-	end)
+	function ENT:Use(ply, activator)
+		if ply ~= activator then return end
+		if not IsValid(self.Seat) then return end
+		
+		ply:EnterVehicle(self.Seat)
+	end
 
 	hook.Add("GravGunPickupAllowed", "crawler", function(_, ent)
 		if ent:GetClass() == "crawler" or IsValid(ent.Crawler) then return false end
@@ -689,19 +671,24 @@ if CLIENT then
 	language.Add("crawler", "Crawler")
 
 	function ENT:Initialize()
+		self.BikeModel = self:GetNWEntity("BikeModel")
 	end
+
+	local Trails_Offsets = {
+		Vector(-43, 22, 0),
+		Vector(-40, 19, 5),
+		Vector(-43, -22, 0),
+		Vector(-40, -19, 5)
+	}
 
 	local sprite_mat = Material("sprites/glow04_noz")
 	function ENT:Draw()
-		local pos = self:GetPos()
 		local size = (self:GetVelocity():Length()) * 2 / 100
 
 		render.SetMaterial(sprite_mat)
-		render.DrawSprite(pos + -self:GetForward() * 43 + self:GetRight() * 22, size, size, self.EnergyColor)
-		render.DrawSprite(pos + -self:GetForward() * 40 + self:GetRight() * 19 + self:GetUp() * 5, size, size, self.EnergyColor)
-
-		render.DrawSprite(pos + -self:GetForward() * 45 + -self:GetRight() * 22, size, size, self.EnergyColor)
-		render.DrawSprite(pos + -self:GetForward() * 43 + -self:GetRight() * 19 + self:GetUp() * 5, size, size, self.EnergyColor)
+		for _, v in ipairs(Trails_Offsets) do
+			render.DrawSprite(self:LocalToWorld(v), size, size, self.EnergyColor)
+		end
 	end
 
 	local DRAW_WHEEL_OFFSET = 3
