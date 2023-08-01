@@ -20,6 +20,7 @@ for _, f in pairs(file.Find("sound/crawler/*", "GAME")) do
 	util.PrecacheSound("sound/crawler/" .. f)
 end
 
+
 list.Set("Vehicles", "crawler", ENT)
 local WHEEL_OFFSET = Vector(0, 0, 10)
 local WHEEL_ANGLE_OFFSET = Angle(90, 90, 0)
@@ -117,7 +118,6 @@ if SERVER then
 
 	function ENT:SetupTrails()
 		self.Trails = self.Trails or {}
-		PrintTable(self.BikeModel:GetAttachments())
 		
 		for i = 1, 4 do
 			if IsValid(self.Trails[i]) then SafeRemoveEntity(self.Trails[i]) end
@@ -160,7 +160,6 @@ if SERVER then
 		self.BikeModel:SetParent(self)
 		self.BikeModel:Spawn()
 		self.BikeModel.Crawler = self
-		self:SetNWEntity("BikeModel", self.BikeModel)
 
 		local bike_phys = self.BikeModel:GetPhysicsObject()
 		if IsValid(bike_phys) then
@@ -169,40 +168,13 @@ if SERVER then
 			--bike_phys:AddGameFlag(FVPHYSICS_NO_PLAYER_PICKUP)
 		end
 
-		self.Wheel = ents.Create("prop_physics")
-		self.Wheel:SetModel("models/crawler/energy_wheel.mdl")
-		--self.Wheel:SetMaterial("models/props_combine/portalball001_sheet")
-		self.Wheel:SetPos(self:GetPos() + WHEEL_OFFSET)
-		self.Wheel.RenderGroup = RENDERGROUP_BOTH
-		self.Wheel:SetAngles(self:GetAngles() + WHEEL_ANGLE_OFFSET)
-		self.Wheel:Spawn()
-		self.Wheel:SetColor(self.EnergyColor)
-		self:SetNWEntity("Wheel", self.Wheel)
-		self.Wheel.Crawler = self
-
-		local old_bounds = self.Wheel:OBBMaxs()
-		self.Wheel:PhysicsInitSphere(50)
-		self.Wheel:SetCollisionBounds(-old_bounds, old_bounds)
-		self.Wheel:SetCollisionGroup(COLLISION_GROUP_PASSABLE_DOOR)
-		self:DeleteOnRemove(self.Wheel)
-
-		local phys_wheel = self.Wheel:GetPhysicsObject()
-		if IsValid(phys_wheel) then
-			phys_wheel:SetMass(1)
-			phys_wheel:SetMaterial("gmod_silent")
-			phys_wheel:AddGameFlag(FVPHYSICS_NO_PLAYER_PICKUP)
-			phys_wheel:Wake()
-		end
-
 		self:SetupTrails()
 
 		local function apply_ownership()
-			local owner = self.CPPIGetOwner and self:CPPIGetOwner() or self:GetOwner()
-			if not IsValid(owner) then owner = self:GetCreator() end
+			local owner = self:GetCreator()
 			if not IsValid(owner) then return end
 
-			local bike_ents = { self.Wheel, self.BikeModel, self.Seat }
-			for _, ent in ipairs(bike_ents) do
+			for _, ent in ipairs({ self.BikeModel, self.Seat }) do
 				if not IsValid(ent) then continue end
 
 				if ent.CPPISetOwner then
@@ -214,32 +186,33 @@ if SERVER then
 			end
 		end
 
-		-- this is necessary because if its done too early it crashes the game
-		-- reason being that the spawnmenu, and some other entity spawning code set the pos
-		-- of the entity after spawning it which causes the constraint to literreally shit itself
-		timer.Simple(0.1, function()
-			if not IsValid(self) then return end
-			if not IsValid(self.Wheel) then return end
-
-			apply_ownership()
-
-			self.Wheel:SetPos(self:GetPos() + WHEEL_OFFSET)
-			self.Wheel:SetAngles(self:GetAngles() + WHEEL_ANGLE_OFFSET)
-			constraint.Axis(self.Wheel, self, 0, 0, Vector(0, 0, 1), WHEEL_OFFSET, 0, 0, 0, 1)
-		end)
-
-		self.Filter = { self, self.Seat, self.Wheel, self.BikeModel }
+		self.Forward = 0
+		self.Backward = 0
+		self.Left = 0
+		self.Right = 0
+		self.Turbo = 0
+		self.Filter = { self, self.Seat, self.BikeModel }
 	end
 
 	function ENT:ControlHandler(ply, key, pressed)
 		if ply ~= self:GetDriver() then return end
-
-		if key == IN_FORWARD then self.Forward = pressed end
-		if key == IN_BACK then self.Backward = pressed end
-		if key == IN_MOVELEFT then self.Left = pressed end
-		if key == IN_MOVERIGHT then self.Right = pressed end
-		if key == IN_SPEED then self.Turbo = pressed end
-		if key == IN_JUMP then self.Drop = pressed end
+		
+		do
+			 local process_input = pressed and 1 or 0
+			print(process_input)
+			return 
+		end
+		
+		if key == IN_FORWARD then self.Forward = process_input end
+		if key == IN_BACK then self.Backward = process_input end
+		if key == IN_MOVELEFT then self.Left =process_input end
+		if key == IN_MOVERIGHT then self.Right = process_input end
+		if key == IN_SPEED then self.Turbo = process_input end
+		
+		self.WS = self.Forward - self.Backward
+		self.AD = self.Left - self.Right
+		print(WS)
+		print(AD)
 	end
 
 	local function handle_keys(ply, key, pressed)
@@ -251,8 +224,8 @@ if SERVER then
 		veh.Crawler:ControlHandler(ply, key, pressed)
 	end
 
-	hook.Add("KeyPress", "crawler", function(ply, key) handle_keys(ply, key, true) end)
-	hook.Add("KeyRelease", "crawler", function(ply, key) handle_keys(ply, key, false) end)
+	hook.Add("KeyPress", "crawler", handle_keys)
+	hook.Add("KeyRelease", "crawler", handle_keys)
 
 	hook.Add("PlayerEnteredVehicle", "crawler", function(ply, veh)
 		if not IsValid(veh.Crawler) then return end
@@ -274,11 +247,11 @@ if SERVER then
 		table.remove(crawler.Filter, #crawler.Filter)
 		crawler:SetNWEntity("Driver", NULL)
 
-		crawler.Forward = false
-		crawler.Backward = false
-		crawler.Left = false
-		crawler.Right = false
-		crawler.Turbo = false
+		crawler.Forward = 0
+		crawler.Backward = 0
+		crawler.Left = 0
+		crawler.Right = 0
+		crawler.Turbo = 0
 
 		timer.Simple(0.1, function()
 			if not crawler:IsValid() or not ply:IsValid() then return end
@@ -467,130 +440,12 @@ if SERVER then
 	local DOWNWARD_FORCE = -600
 	local MIN_VEL_FOR_SOUND = 10
 	function ENT:Think()
-		if not IsValid(self.Wheel) then return end
-
 		local phys = self:GetPhysicsObject()
-		local phys_wheel = self.Wheel:GetPhysicsObject()
-		if not IsValid(phys) or not IsValid(phys_wheel) then return end
-
-		-- enable back gravity for jumping, falling etc
-		if not self:IsOnSurface() or self.Drop then
-			phys:EnableGravity(true)
-			phys:SetMass(500)
-			phys_wheel:EnableGravity(true)
-
-			-- this stabilizes the vehicle when jumping or falling, preventing the vomit inducing rotations
-			local ang = self:GetAngles()
-			local ang_vel = self:ComputeAngularVelocity(phys, ang)
-			ang_vel:Mul(20)
-			ang_vel:Sub(phys:GetAngleVelocity())
-			phys:AddAngleVelocity(ang_vel)
-
-			if self.Forward then
-				phys:ApplyForceOffset(self:GetUp() * VEL_MULT * 10, self:GetPos() + self:GetForward() * -PLATE_FORWARD_LENGTH)
-				phys:ApplyForceOffset(-self:GetUp() * VEL_MULT * 10, self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH)
-				phys_wheel:AddVelocity(self:GetForward() * VEL_MULT * 4)
-			end
-
-			if self.Backward then
-				phys:ApplyForceOffset(-self:GetUp() * VEL_MULT * 10, self:GetPos() + self:GetForward() * -PLATE_FORWARD_LENGTH)
-				phys:ApplyForceOffset(self:GetUp() * VEL_MULT * 10, self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH)
-				phys_wheel:AddVelocity(-self:GetForward() * VEL_MULT * 4)
-			end
-
-			return
-		end
-
-		do -- base related stuff
-			phys:EnableGravity(false)
-			phys:SetMass(24)
-			local target_ang = Angle(0, 0, 0)
-
-			if self:InWater() then
-				local cur_ang = self:GetAngles()
-				local tr_front, tr_back = self:ExecuteTraces()
-				cur_ang.pitch = 0
-				if (tr_front.Hit and not tr_front.HitSky) and (tr_back.Hit and not tr_back.HitSky) then
-					cur_ang.pitch = (tr_front.HitPos - tr_back.HitPos):Angle().pitch
-				end
-
-				cur_ang.roll = 0
-				target_ang = cur_ang
-			else
-				local tr_front, tr_back, tr_right, tr_left = self:ExecuteTraces()
-				if (tr_front.Hit and not tr_front.HitSky) and (tr_back.Hit and not tr_back.HitSky) then
-					-- Rotation matrix, will work with ceilings, sky etc but not with walls -> gimbal lock
-					local diff_ang = (tr_back.HitPos - tr_front.HitPos):Angle()
-					if (tr_right.Hit and not tr_right.HitSky) and (tr_left.Hit and not tr_left.HitSky) then
-						local side_diff_ang = (tr_left.HitPos - tr_right.HitPos):Angle()
-						diff_ang.roll = side_diff_ang.pitch
-					end
-
-					local m = Matrix()
-					m:Rotate(diff_ang)
-
-					if self:IsOnWall() then
-						m:SetRight(self.Wheel:GetUp())
-						--m:SetForward(-self:GetForward()) -- this makes it less shaky when going up and down
-					end
-
-					m:SetUp(self:GetUp())
-					target_ang = m:GetAngles()
-				end
-			end
-
-			local ang_vel = self:ComputeAngularVelocity(phys, target_ang)
-			ang_vel:Mul(20)
-			ang_vel:Sub(phys:GetAngleVelocity())
-			phys:AddAngleVelocity(ang_vel)
-		end
-
-		do -- wheel related stuff
-			phys_wheel:EnableGravity(false)
-			phys_wheel:AddVelocity(self:GetUp() * DOWNWARD_FORCE) -- stick to surface below
-
-			local final_linear_vel_mult = VEL_MULT
-			if self.Turbo then final_linear_vel_mult = VEL_MULT + 200 end -- add extra velocity for turbo
-			local final_angular_vel_mult = VEL_MULT * 1.5
-			if not self:IsOnSurface() then final_angular_vel_mult = VEL_MULT * 1.5 end -- add extra velocity for jumping
-
-			if self.Forward then
-				phys_wheel:AddVelocity(self:GetForward() * final_linear_vel_mult)
-				phys_wheel:AddAngleVelocity(VECTOR_UP * ANGLE_VEL_MULT)
-			end
-
-			if self.Backward then
-				phys_wheel:AddVelocity(self:GetForward() * -final_linear_vel_mult)
-				phys_wheel:AddAngleVelocity(VECTOR_UP * -ANGLE_VEL_MULT)
-			end
-
-			if self.Left then
-				phys_wheel:ApplyForceOffset(-self.Wheel:GetUp() * final_angular_vel_mult, self:GetPos() + self:GetForward() * -PLATE_FORWARD_LENGTH)
-				phys_wheel:ApplyForceOffset(self.Wheel:GetUp() * final_angular_vel_mult, self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH)
-			end
-
-			if self.Right then
-				phys_wheel:ApplyForceOffset(self.Wheel:GetUp() * final_angular_vel_mult, self:GetPos() + self:GetForward() * -PLATE_FORWARD_LENGTH)
-				phys_wheel:ApplyForceOffset(-self.Wheel:GetUp() * final_angular_vel_mult, self:GetPos() + self:GetForward() * PLATE_FORWARD_LENGTH)
-			end
-
-			local going_left = self.Left and 1 or 0
-			local going_right = self.Right and 1 or 0
-			if (going_left - going_right) == 0 then
-				local cur_ang_vel = phys_wheel:GetAngleVelocity()
-				phys_wheel:AddAngleVelocity(-cur_ang_vel / 2 * DAMP_FACTOR)
-			end
-
-			local going_forward = self.Forward and 1 or 0
-			local going_backward = self.Backward and 1 or 0
-			if (going_forward - going_backward) == 0 then
-				local cur_vel = phys_wheel:GetVelocity()
-				phys_wheel:AddVelocity(-cur_vel / 2 * DAMP_FACTOR)
-			end
-
-			self:ProcessSounds(phys_wheel)
-		end
-
+		if not IsValid(phys) then return end
+		
+		self.vel_local = phys:WorldToLocalVector(self:GetVelocity())
+		
+		--IOU hover code
 		self:NextThink(CurTime())
 
 		return true
@@ -671,7 +526,17 @@ if CLIENT then
 	language.Add("crawler", "Crawler")
 
 	function ENT:Initialize()
-		self.BikeModel = self:GetNWEntity("BikeModel")
+		self.Wheel = ClientsideModel("models/crawler/energy_wheel.mdl", RENDERGROUP_TRANSLUCENT)
+
+		self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET))
+		self.Wheel.RenderGroup = RENDERGROUP_BOTH
+		self.Wheel:SetAngles(self:LocalToWorldAngles(WHEEL_ANGLE_OFFSET))
+		self.Wheel:Spawn()
+		self.Wheel:SetParent(self)
+		
+		self.Wheel:SetColor(self.EnergyColor)
+		
+		--Wheel size 50?
 	end
 
 	local Trails_Offsets = {
@@ -693,10 +558,12 @@ if CLIENT then
 
 	local DRAW_WHEEL_OFFSET = 3
 	function ENT:Think()
-		local wheel = self:GetNWEntity("Wheel")
-		if not IsValid(wheel) then return end
-
-		-- this makes the wheel way more stable looking
-		wheel:SetRenderOrigin(self:GetPos() + self:GetUp() * (WHEEL_OFFSET.z + DRAW_WHEEL_OFFSET))
+		self.vel_local = self:WorldToLocal(self:GetPos() + self:GetVelocity())
+		
+	self.Wheel:SetAngles(self:LocalToWorldAngles(Angle(CurTime() * 2, 0, 0)))
+	end
+	
+	function ENT:OnRemove()
+		self.Wheel:Remove()
 	end
 end
