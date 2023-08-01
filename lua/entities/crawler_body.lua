@@ -4,6 +4,7 @@ ENT.Type = "anim"
 ENT.Base = "base_anim"
 ENT.ClassName = "crawler_body"
 ENT.Spawnable = false
+ENT.RenderGroup = RENDERGROUP_BOTH
 
 if SERVER then
 	function ENT:Initialize()
