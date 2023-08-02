@@ -400,10 +400,12 @@ local WHEEL_OFFSET = Vector(0, 0, 10)
 
 hook.Add("CalcVehicleView", tag, function(veh, ply, view)
 	local crawler = veh:GetParent()
+	
+	if not IsValid(crawler) then return end
 	if crawler:GetClass() ~= tag then return end
 	if not veh:GetThirdPersonMode() then return end
 	
-		local tr = util.TraceHull( {
+	local tr = util.TraceHull( {
 		start = view.origin,
 		endpos = view.origin - view.angles:Forward() * (50 + veh:GetCameraDistance() * 50),
 		filter = {crawler, veh, ply},
@@ -414,7 +416,6 @@ hook.Add("CalcVehicleView", tag, function(veh, ply, view)
 	view.drawviewer = true
 	view.origin = tr.HitPos
 	return view
-	
 end)
 
 net.Receive("prop_vehicle_crawler_color", function()
