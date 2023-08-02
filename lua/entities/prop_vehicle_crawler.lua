@@ -287,10 +287,11 @@ if SERVER then
 	
 	local Trace_Offsets = {
 		
-		Vector(49, 18, 0),
-		Vector(-61, -18, 0),
-		Vector(49, -18, 0),
-		Vector(-61, 18, 0)
+		Vector(48, 18, 0),
+		Vector(60, -18, 0),
+		Vector(-48, 18, 0),
+		Vector(-60, -18, 0),
+		Vector(0, 0, 0)
 	}
 	local deg2rad = math.pi / 180
 	local function rotate_around_axis(this, axis, degrees) --thank you wiremod
@@ -313,8 +314,7 @@ if SERVER then
 		local Distance_Average = 0
 		local Up_Average = Vector(0, 0, 0)
 		
-		--Traces
-		
+		--5 Traces, 4 in the corners, 1 in the middle
 		local Trace_Corners = {}
 		local Any_Trace_Hit = false
 		for i, v in ipairs(Trace_Offsets) do
@@ -322,8 +322,8 @@ if SERVER then
 				start = self:LocalToWorld(v),
 				endpos = self:LocalToWorld(v + self.vel_local * 0.2 - Vector(0, 0, Ride_Height_Functional)),
 				filter = self.Filter,
-				mins = Vector(-2, -2, -2),
-				maxs = Vector(2, 2, 2),
+				mins = Vector(-3, -3, -3),
+				maxs = Vector(3, 3, 3),
 				mask = MASK_SOLID,
 				collisiongroup = COLLISION_GROUP_WEAPON
 			})
@@ -338,15 +338,18 @@ if SERVER then
 		
 		if not Any_Trace_Hit then return end
 		
-		Distance_Average = (Distance_Average / #Trace_Offsets)  * Ride_Height_Functional
-		--2 crossed direction normals cross product = up normal of terrain, no more jank of the 4 offset forces
-		Up_Average = (Trace_Corners[3].HitPos - Trace_Corners[4].HitPos):GetNormalized():Cross((Trace_Corners[1].HitPos - Trace_Corners[2].HitPos):GetNormalized())
+		--Get 2 cross products
+		local normal1 = -(Trace_Corners[1].HitPos - Trace_Corners[5].HitPos):GetNormalized():Cross((Trace_Corners[2].HitPos - Trace_Corners[5].HitPos):GetNormalized())
+		local normal2= (Trace_Corners[3].HitPos - Trace_Corners[5].HitPos):GetNormalized():Cross((Trace_Corners[4].HitPos - Trace_Corners[5].HitPos):GetNormalized())
+		
+		--Average it out into 1
+		Up_Average = (normal1 + normal2) * 0.5
 		
 		--Calculate lean based on angular velocity
 		Up_Average = rotate_around_axis(Up_Average, self:GetForward(), math.Clamp(-phys:GetAngleVelocity()[3] * 0.1, -20, 20))
 		
-		
 		--Movement Force
+		Distance_Average = (Distance_Average / #Trace_Offsets)  * Ride_Height_Functional
 		local Up = Up_Average * self:CalculatePD(PD_Settings, Ride_Height - Distance_Average, mass)
 		local MoveForce = self:GetForward() * 20 * self.WS * (1 + self.Turbo) * self.Tick_Adjust
 		self.Force = (self.Prop_Gravity + Up + MoveForce - phys:GetVelocity() * 0.02) * mass
@@ -430,7 +433,7 @@ function ENT:Initialize()
 	
 end
 
-local Ride_Height_Visual = Ride_Height + 4
+local Ride_Height_Visual = Ride_Height + 7
 function ENT:Think()
 	--Wheel spin
 	self.vel_local = self:WorldToLocal(self:GetPos() + self:GetVelocity())
@@ -516,7 +519,7 @@ function ENT:DrawGizmo()
 	
 	if not IsValid(self.GizmoModel) then return end
 	
-	self.GizmoModel:SetAngles(-self:GetAngles() - Angle(0, 45, 0))
+	self.GizmoModel:SetAngles(-self:LocalToWorldAngles(Angle(0, 45, 0)))
 	
 	cam.Start3D(gizo_cam_pos, gizmo_cam_ang, 3.5, 256, 30, 256, 256 - 60)
 	render.SuppressEngineLighting(true)
