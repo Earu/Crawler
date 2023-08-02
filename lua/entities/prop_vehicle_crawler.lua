@@ -23,7 +23,7 @@ end
 
 
 list.Set("Vehicles", "prop_vehicle_crawler", ENT)
-local WHEEL_OFFSET = Vector(0, 0, 10)
+
 
 function ENT:GetDriver()
 	return self:GetNWEntity("Driver")
@@ -112,7 +112,6 @@ if SERVER then
 	
 	function ENT:SetupTrails()
 		self.Trails = self.Trails or {}
-		
 		for i = 1, 4 do
 			if IsValid(self.Trails[i]) then SafeRemoveEntity(self.Trails[i]) end
 			
@@ -121,7 +120,9 @@ if SERVER then
 	end
 	
 	function ENT:SetupSounds()
-	
+		self.Sounds = self.Sounds or {}
+		self.Sounds.EngineLoop = CreateSound(self, "crawler/engine_loop.wav")
+		self.Sounds.WheelLoop = CreateSound(self, "crawler/wheel_loop.wav")
 	end
 	
 	function ENT:Initialize()
@@ -167,10 +168,11 @@ if SERVER then
 		self:SetNW2Entity("Seat", self.Seat)
 		self.Seat:GetPhysicsObject():EnableDrag( false ) 
 		self.Seat:GetPhysicsObject():EnableMotion( false )
-		self:DeleteOnRemove(self.Seat)
 		
 		self:SetupTrails()
-		--self:SetupSounds()
+		self:SetupSounds()
+		
+		self:DeleteOnRemove(self.Seat)
 		
 		local function apply_ownership()
 			local owner = self:GetCreator()
@@ -208,7 +210,7 @@ if SERVER then
 		if key == IN_BACK then self.Backward = process_input end
 		if key == IN_MOVELEFT then self.Left = process_input end
 		if key == IN_MOVERIGHT then self.Right = process_input end
-		if key == IN_SPEED then self.Turbo = process_input end
+		if key == IN_SPEED then self.Turbo = process_input * 1.5 end
 		
 		self.WS = self.Forward - self.Backward
 		self.AD = self.Left - self.Right
@@ -226,16 +228,13 @@ if SERVER then
 	hook.Add("KeyRelease", tag, function(ply, key) handle_keys(ply, key, false) end)
 	
 	hook.Add("PlayerEnteredVehicle", "prop_vehicle_crawler", function(ply, veh)
-		if not IsValid(veh.Crawler) then return end
-		
 		local crawler = veh.Crawler
-		table.insert(crawler.Filter, ply)
+		if not IsValid(crawler) then return end
+
 		crawler:SetNWEntity("Driver", ply)
 		
-		crawler.EngineLoop = CreateSound(crawler, "crawler/engine_loop.wav")
-		crawler.EngineLoop:ChangeVolume(1)
-		crawler.EngineLoop:ChangePitch(180)
-		crawler.EngineLoop:Play()
+		crawler.Sounds.EngineLoop:PlayEx(0, 100)
+		crawler.Sounds.WheelLoop:PlayEx(0, 100)
 	end)
 	
 	hook.Add("PlayerLeaveVehicle", "prop_vehicle_crawler", function(ply, veh)
@@ -252,7 +251,13 @@ if SERVER then
 		crawler.WS = 0
 		crawler.AD = 0
 		
-		if crawler.EngineLoop then crawler.EngineLoop:Stop() end
+		crawler.Sounds.EngineLoop:ChangeVolume(0, 0.5)
+		crawler.Sounds.WheelLoop:ChangeVolume(0, 0.5)
+		timer.Simple(0.5, function()
+			crawler.Sounds.EngineLoop:Stop()
+			crawler.Sounds.WheelLoop:Stop()
+		end)
+		
 	end)
 	
 	function ENT:Use(ply, activator)
@@ -275,7 +280,17 @@ if SERVER then
 	local ANGLE_VEL_MULT = 100
 	local VEL_MULT = 300
 	local DOWNWARD_FORCE = -600
-	local MIN_VEL_FOR_SOUND = 10
+	local MIN_VEL_FOR_SOUND = 500
+	
+	function ENT:HandleSounds(velfwd)
+		local velfwd = math.abs(velfwd)
+		
+		self.Sounds.WheelLoop:ChangeVolume(math.min(velfwd / MIN_VEL_FOR_SOUND, 1), 0.1)
+		self.Sounds.WheelLoop:ChangePitch(20 + math.min(velfwd * 0.005, 200))
+		
+		self.Sounds.EngineLoop:ChangeVolume(math.ease.InExpo(math.Clamp((velfwd - 500) * 0.005 , 0, 1)), 0.1)
+		self.Sounds.EngineLoop:ChangePitch(100 + math.min(velfwd / 15, 130))
+	end
 	
 	local PD_Settings = { P = 1, D = 3 }
 	function ENT:CalculatePD(PD, err, minmax)
@@ -296,20 +311,32 @@ if SERVER then
 		Vector(48.5, -18, 0),
 		Vector(-60, 18, 0)
 	}
+	local deg2rad = math.pi / 180
+	local function rotate_around_axis(this, axis, degrees) --thank you wiremod
+		local ca, sa = math.cos(degrees*deg2rad), math.sin(degrees*deg2rad)
+		local x,y,z = axis[1], axis[2], axis[3]
+		local length = (x*x+y*y+z*z)^0.5
+		x,y,z = x/length, y/length, z/length
+
+		return Vector((ca + (x^2)*(1-ca)) * this[1] + (x*y*(1-ca) - z*sa) * this[2] + (x*z*(1-ca) + y*sa) * this[3],
+				(y*x*(1-ca) + z*sa) * this[1] + (ca + (y^2)*(1-ca)) * this[2] + (y*z*(1-ca) - x*sa) * this[3],
+				(z*x*(1-ca) - y*sa) * this[1] + (z*y*(1-ca) + x*sa) * this[2] + (ca + (z^2)*(1-ca)) * this[3])
+	end
+	
 	function ENT:PhysicsUpdate(phys)
 		
-		self.vel_local = phys:WorldToLocalVector(self:GetVelocity())
-		self.vel_composite = Vector(self.vel_local.x, self.vel_local.y, math.Clamp(self.vel_local.z, -20, 20))
+		self.vel_local = phys:WorldToLocalVector(self:GetVelocity()) --composite not needed as its not e2
+		self:HandleSounds(self.vel_local.x)
 		
 		--Traces
 		local Predictive_Swap = util.TraceHull({
 			start = self:GetPos(),
-			endpos = self:LocalToWorld(self.vel_composite * 0.2),
+			endpos = self:LocalToWorld(self.vel_local * 0.2),
 			filter = self.Filter,
 			mins = Vector(-2, -2, -2),
 			maxs = Vector(2, 2, 2),
 			mask = MASK_SOLID,
-			--collisiongroup = COLLISION_GROUP_PLAYER_MOVEMENT
+			collisiongroup = COLLISION_GROUP_WEAPON
 		})
 		local Distance_Average = 0
 		local Up_Average = Vector(0, 0, 0)
@@ -319,6 +346,7 @@ if SERVER then
 		if Should_Swap then
 			Distance_Average = Predictive_Swap.Fraction * Predictive_Swap.HitPos:Distance(self:GetPos())
 			Up_Average = Predictive_Swap.HitNormal
+			print("swapping to terrain ", Up_Average)
 			else
 			local Trace_Corners = {}
 			local Any_Trace_Hit = false
@@ -326,12 +354,12 @@ if SERVER then
 			for i, v in ipairs(Trace_Offsets) do
 				Trace_Corners[i] = util.TraceHull({
 					start = self:LocalToWorld(v),
-					endpos = self:LocalToWorld(v + self.vel_composite * 0.2 - Vector(0, 0, Ride_Height + 10)),
+					endpos = self:LocalToWorld(v + self.vel_local * 0.2 - Vector(0, 0, Ride_Height + 10)),
 					filter = self.Filter,
 					mins = Vector(-2, -2, -2),
 					maxs = Vector(2, 2, 2),
 					mask = MASK_SOLID,
-					--collisiongroup = COLLISION_GROUP_PLAYER_MOVEMENT
+					collisiongroup = COLLISION_GROUP_WEAPON
 				})
 				Any_Trace_Hit = Any_Trace_Hit or (Trace_Corners[i].Hit and not Trace_Corners[i].HitSky)
 				Distance_Average = Distance_Average + Trace_Corners[i].Fraction
@@ -345,15 +373,19 @@ if SERVER then
 			Distance_Average = Distance_Average  * 14.25
 			--2 crossed direction normals cross product = up normal of terrain, no more jank of the 4 offset forces
 			Up_Average = (Trace_Corners[3].HitPos - Trace_Corners[4].HitPos):GetNormalized():Cross((Trace_Corners[1].HitPos - Trace_Corners[2].HitPos):GetNormalized())
+			
+			--Calculate lean based on angular velocity
+			Up_Average = rotate_around_axis(Up_Average, self:GetForward(), math.Clamp(-phys:GetAngleVelocity()[3] * 0.075, -15, 15))
 		end
-		
-		--Force
+
+		--Movement Force
 		local Up = Up_Average * self:CalculatePD(PD_Settings, Ride_Height - Distance_Average, self.mass)
 		local MoveForce = self:GetForward() * 20 * self.WS * (1 + self.Turbo) * self.Tick_Adjust
 		self.Force = (self.Prop_Gravity + Up + MoveForce - phys:GetVelocity() * 0.02) * self.mass
 		
 		phys:ApplyForceCenter(self.Force)
 		
+		--Angle Force
 		self._Cross = self.Cross
 		self.Cross = Up_Average:Cross(self:GetUp()) * 1000
 		self._Cross =  self.Cross - self._Cross
@@ -362,48 +394,16 @@ if SERVER then
 		self.AngForce = (self.Cross + self._Cross * 10 + AngVel) * phys:GetInertia() / 28.5 * self.Tick_Adjust
 		phys:ApplyTorqueCenter(-self.AngForce)
 		
-		--self:HandleSounds(self.vel_composite.x)
 		self:NextThink(CurTime())
 		return true
 	end
 	
-	function ENT:ProcessSounds(phys_wheel)
-		local final_ang_vel = phys_wheel:GetAngleVelocity()
-		if math.abs(final_ang_vel.z) > MIN_VEL_FOR_SOUND then
-			if not self.WheelLoop then
-				self.WheelLoop = CreateSound(self, "crawler/wheel_loop.wav")
-				self.WheelLoop:Play()
-			end
-			
-			self.WheelLoopStopTime = nil
-			self.WheelLoop:ChangePitch(20 + math.min(math.abs(final_ang_vel.z) / 200, 200))
-		end
-		
-		if self.WheelLoop and math.abs(final_ang_vel.z) < MIN_VEL_FOR_SOUND then
-			if not self.WheelLoopStopTime then
-				self.WheelLoopStopTime = CurTime() + 0.5
-				elseif self.WheelLoopStopTime >= CurTime() then
-				self.WheelLoop:Stop()
-				self.WheelLoop = nil
-			end
-		end
-		
-		local len = phys_wheel:GetVelocity():Length()
-		if self.EngineLoop then
-			self.EngineLoop:ChangePitch(100 + math.min(len / 20, 100))
-			self.EngineLoop:ChangeVolume(0.1 + math.max((len - 300) / 250 / 10, 0), 0)
-		end
-	end
-	
 	function ENT:OnRemove()
-		if self.WheelLoop then
-			self.WheelLoop:Stop()
-			self.WheelLoop = nil
-		end
-		
-		if self.EngineLoop then
-			self.EngineLoop:Stop()
-			self.EngineLoop = nil
+		for k, v in pairs(self.Sounds) do
+			if not v then continue end
+			
+			v:Stop()
+			v = nil
 		end
 	end
 end
@@ -419,6 +419,7 @@ local max_velocity = 3000
 local gizo_cam_pos = Vector(-460, -460, 650)
 local gizmo_cam_ang = Angle(45, 45, 0)
 local boost_text_col = Color(255, 0, 0)
+local WHEEL_OFFSET = Vector(0, 0, 10)
 
 function ENT:Initialize()
 	self.vel_increment = 0
@@ -432,8 +433,7 @@ function ENT:Initialize()
 	self.Wheel:SetParent(self)
 	
 	self.Wheel:SetColor(self.EnergyColor)
-	
-	--Wheel size 50? --dude it's 47... --not even 47
+	--Wheel size 50? --dude it's 47...
 	
 	self.DashboardTexture = self.DashboardTexture or GetRenderTargetEx(
 		"Crawler_Dashboard_" .. self:EntIndex(),
