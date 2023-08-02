@@ -15,7 +15,8 @@ ENT.Information = "Highly adaptable monowheel vehicle"
 ENT.Name = "Crawler"
 ENT.Class = "prop_vehicle_crawler"
 ENT.AdminSpawnable = false
-ENT.EnergyColor = Color(0, 255, 255)
+ENT.EnergyColor = ENT.EnergyColor or Color(0, 255, 255)
+	
 	
 for _, f in pairs(file.Find("sound/crawler/*", "GAME")) do
 	util.PrecacheSound("sound/crawler/" .. f)
@@ -56,7 +57,7 @@ properties.Add("energy_color", {
 			ent.EnergyColor = col
 			self:MsgStart()
 			net.WriteEntity(ent)
-			net.WriteTable(col)
+			net.WriteColor(col)
 			self:MsgEnd()
 		end
 		
@@ -64,13 +65,13 @@ properties.Add("energy_color", {
 		color_combo:Dock(FILL)
 		color_combo:SetColor(col)
 		function color_combo:OnValueChanged(c)
-			col = c
+			col = Color(c.r, c.g, c.b, c.a)
 			ent:UpdateWheelColor(col)
 		end
 	end,
 	Receive = function(self, length, ply)
 		local ent = net.ReadEntity()
-		local col = net.ReadTable()
+		local col = net.ReadColor()
 		
 		if not properties.CanBeTargeted(ent, ply) then return end
 		if not self:Filter(ent, ply) then return end
@@ -78,19 +79,28 @@ properties.Add("energy_color", {
 		ent.EnergyColor = col		
 		ent:SetupTrails()
 		
-		net.Start("prop_vehicle_crawler_colors")
+		net.Start("prop_vehicle_crawler_color")
 		net.WriteEntity(ent)
 		net.WriteColor(col)
 		net.Broadcast()
 	end
 })
 
-local Ride_Height = 37
+local Ride_Height = 33
 
 if SERVER then
 	local CVAR_FASTDL = CreateConVar("prop_vehicle_crawler_fastdl", "1", FCVAR_ARCHIVE, "Should clients download content for crawlers on join or not")
-	util.AddNetworkString("prop_vehicle_crawler_colors")
+	util.AddNetworkString("prop_vehicle_crawler_color")
 	
+	net.Receive("prop_vehicle_crawler_color", function(_, ply)
+		local ent = net.ReadEntity()
+		if ent:GetClass() ~= tag then return end
+		
+		net.Start("prop_vehicle_crawler_color")
+		net.WriteEntity(ent)
+		net.WriteColor(ent.EnergyColor)
+		net.Send(ply)
+	end)
 	
 	local function add_resource_dir(dir)
 		for _, f in pairs(file.Find(dir .. "/*","GAME")) do
@@ -388,13 +398,38 @@ local gizmo_cam_ang = Angle(45, 45, 0)
 local boost_text_col = Color(255, 0, 0)
 local WHEEL_OFFSET = Vector(0, 0, 10)
 
-net.Receive("prop_vehicle_crawler_colors", function()
+hook.Add("CalcVehicleView", tag, function(veh, ply, view)
+	local crawler = veh:GetParent()
+	if crawler:GetClass() ~= tag then return end
+	if not veh:GetThirdPersonMode() then return end
+	
+		local tr = util.TraceHull( {
+		start = view.origin,
+		endpos = view.origin - view.angles:Forward() * (50 + veh:GetCameraDistance() * 50),
+		filter = {crawler, veh, ply},
+		mins = Vector(-4, -4, -4),
+		maxs = Vector(4, 4, 4),
+	} )
+	
+	view.drawviewer = true
+	view.origin = tr.HitPos
+	return view
+	
+end)
+
+net.Receive("prop_vehicle_crawler_color", function()
 	local ent = net.ReadEntity()
 	if ent:GetClass() ~= tag then return end
 	
 	local clr = net.ReadColor()
 	ent:UpdateWheelColor(clr)
 end)
+
+function ENT:RequestColor()
+	net.Start("prop_vehicle_crawler_color")
+	net.WriteEntity(self)
+	net.SendToServer()
+end
 
 function ENT:UpdateWheelColor(clr)
 	if not IsValid(self.Wheel) then return end
@@ -414,6 +449,7 @@ function ENT:Initialize()
 	self.Wheel:Spawn()
 	self.Wheel:SetParent(self)
 	
+	self:RequestColor()
 	self:UpdateWheelColor(self.EnergyColor)
 	
 	self.DashboardTexture = self.DashboardTexture or GetRenderTargetEx(
@@ -443,7 +479,7 @@ function ENT:Initialize()
 	
 end
 
-local Ride_Height_Visual = Ride_Height + 7
+local Ride_Height_Visual = Ride_Height + 11
 function ENT:Think()
 	--Wheel spin
 	self.vel_local = self:WorldToLocal(self:GetPos() + self:GetVelocity())
