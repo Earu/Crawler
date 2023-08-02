@@ -84,7 +84,7 @@ properties.Add("energy_color", {
 	end
 })
 
-
+local Ride_Height = 37
 
 if SERVER then
 	ENT.LastComputedRollTime = 0
@@ -137,14 +137,9 @@ if SERVER then
 		
 		self.phys = self:GetPhysicsObject()
 		if not IsValid(self.phys) then return end
-		
-		self.mass = self.phys:GetMass()
-		self.phys:EnableMotion(true)
-		self.phys:EnableDrag(false)
 		self.phys:SetMass(1000)
+		self.phys:SetMaterial("metal_vehicle")
 		self.phys:Wake()
-		construct.SetPhysProp(nil, self, 0, self.phys, { GravityToggle = true, Material = "metal_vehicle" })
-		--self.phys:SetMaterial("metal_vehicle")
 		
 		if IsValid(self.Seat) then SafeRemoveEntity(self.Seat) end
 		self.Seat = ents.Create("prop_vehicle_prisoner_pod")
@@ -194,7 +189,6 @@ if SERVER then
 		self.WS = 0
 		self.AD = 0
 		self._Derivative = 0
-		self._Integral = 0
 		self._Cross = Vector(0, 0, 0)
 		self.Cross = Vector(0, 0, 0)
 		self.Prop_Gravity = -physenv.GetGravity() * engine.TickInterval()
@@ -214,6 +208,7 @@ if SERVER then
 		
 		self.WS = self.Forward - self.Backward
 		self.AD = self.Left - self.Right
+		self:SetNWInt("AD", self.AD)
 	end
 	
 	local function handle_keys(ply, key, pressed)
@@ -230,7 +225,7 @@ if SERVER then
 	hook.Add("PlayerEnteredVehicle", "prop_vehicle_crawler", function(ply, veh)
 		local crawler = veh.Crawler
 		if not IsValid(crawler) then return end
-
+		
 		crawler:SetNWEntity("Driver", ply)
 		
 		crawler.Sounds.EngineLoop:PlayEx(0, 100)
@@ -254,6 +249,8 @@ if SERVER then
 		crawler.Sounds.EngineLoop:ChangeVolume(0, 0.5)
 		crawler.Sounds.WheelLoop:ChangeVolume(0, 0.5)
 		timer.Simple(0.5, function()
+			if not IsValid(crawler) then return end
+			
 			crawler.Sounds.EngineLoop:Stop()
 			crawler.Sounds.WheelLoop:Stop()
 		end)
@@ -267,21 +264,7 @@ if SERVER then
 		ply:EnterVehicle(self.Seat)
 	end
 	
-	--10 degree roll max
-	
-	local trace_line = util.TraceLine
-	-- Technically we could only do two traces, but adding more fallbacks allows the bike to be more adaptable
-	local TRACE_LENGTH = 200
-	local PLATE_FORWARD_LENGTH = 36
-	local PLATE_SIDE_LENGTH = 20
-	
-	local DAMP_FACTOR = 1.00001
-	local VECTOR_UP = Vector(0, 0, 1)
-	local ANGLE_VEL_MULT = 100
-	local VEL_MULT = 300
-	local DOWNWARD_FORCE = -600
 	local MIN_VEL_FOR_SOUND = 500
-	
 	function ENT:HandleSounds(velfwd)
 		local velfwd = math.abs(velfwd)
 		
@@ -302,14 +285,12 @@ if SERVER then
 		return result * self.Tick_Adjust
 	end
 	
-	
-	local Ride_Height = 40
 	local Trace_Offsets = {
-	
-		Vector(48.5, 18, 0),
-		Vector(-60, -18, 0),
-		Vector(48.5, -18, 0),
-		Vector(-60, 18, 0)
+		
+		Vector(49, 18, 0),
+		Vector(-61, -18, 0),
+		Vector(49, -18, 0),
+		Vector(-61, 18, 0)
 	}
 	local deg2rad = math.pi / 180
 	local function rotate_around_axis(this, axis, degrees) --thank you wiremod
@@ -317,81 +298,68 @@ if SERVER then
 		local x,y,z = axis[1], axis[2], axis[3]
 		local length = (x*x+y*y+z*z)^0.5
 		x,y,z = x/length, y/length, z/length
-
+		
 		return Vector((ca + (x^2)*(1-ca)) * this[1] + (x*y*(1-ca) - z*sa) * this[2] + (x*z*(1-ca) + y*sa) * this[3],
-				(y*x*(1-ca) + z*sa) * this[1] + (ca + (y^2)*(1-ca)) * this[2] + (y*z*(1-ca) - x*sa) * this[3],
-				(z*x*(1-ca) - y*sa) * this[1] + (z*y*(1-ca) + x*sa) * this[2] + (ca + (z^2)*(1-ca)) * this[3])
+			(y*x*(1-ca) + z*sa) * this[1] + (ca + (y^2)*(1-ca)) * this[2] + (y*z*(1-ca) - x*sa) * this[3],
+		(z*x*(1-ca) - y*sa) * this[1] + (z*y*(1-ca) + x*sa) * this[2] + (ca + (z^2)*(1-ca)) * this[3])
 	end
 	
+	local Ride_Height_Functional = Ride_Height + 30
 	function ENT:PhysicsUpdate(phys)
-		
 		self.vel_local = phys:WorldToLocalVector(self:GetVelocity()) --composite not needed as its not e2
 		self:HandleSounds(self.vel_local.x)
 		
-		--Traces
-		local Predictive_Swap = util.TraceHull({
-			start = self:GetPos(),
-			endpos = self:LocalToWorld(self.vel_local * 0.2),
-			filter = self.Filter,
-			mins = Vector(-2, -2, -2),
-			maxs = Vector(2, 2, 2),
-			mask = MASK_SOLID,
-			collisiongroup = COLLISION_GROUP_WEAPON
-		})
+		local mass = phys:GetMass()
 		local Distance_Average = 0
 		local Up_Average = Vector(0, 0, 0)
-		local Should_Swap = Predictive_Swap.Hit and not Predictive_Swap.HitSky
 		
-		--If look ahead hits terrain, don't bother with the corners
-		if Should_Swap then
-			Distance_Average = Predictive_Swap.Fraction * Predictive_Swap.HitPos:Distance(self:GetPos())
-			Up_Average = Predictive_Swap.HitNormal
-			print("swapping to terrain ", Up_Average)
-			else
-			local Trace_Corners = {}
-			local Any_Trace_Hit = false
-			
-			for i, v in ipairs(Trace_Offsets) do
-				Trace_Corners[i] = util.TraceHull({
-					start = self:LocalToWorld(v),
-					endpos = self:LocalToWorld(v + self.vel_local * 0.2 - Vector(0, 0, Ride_Height + 10)),
-					filter = self.Filter,
-					mins = Vector(-2, -2, -2),
-					maxs = Vector(2, 2, 2),
-					mask = MASK_SOLID,
-					collisiongroup = COLLISION_GROUP_WEAPON
-				})
-				Any_Trace_Hit = Any_Trace_Hit or (Trace_Corners[i].Hit and not Trace_Corners[i].HitSky)
-				Distance_Average = Distance_Average + Trace_Corners[i].Fraction
+		--Traces
+		
+		local Trace_Corners = {}
+		local Any_Trace_Hit = false
+		for i, v in ipairs(Trace_Offsets) do
+			Trace_Corners[i] = util.TraceHull({
+				start = self:LocalToWorld(v),
+				endpos = self:LocalToWorld(v + self.vel_local * 0.2 - Vector(0, 0, Ride_Height_Functional)),
+				filter = self.Filter,
+				mins = Vector(-2, -2, -2),
+				maxs = Vector(2, 2, 2),
+				mask = MASK_SOLID,
+				collisiongroup = COLLISION_GROUP_WEAPON
+			})
+			if Trace_Corners[i].HitSky then
+				Distance_Average = Distance_Average + 1
+				Trace_Corners[i].HitPos = self:LocalToWorld(v + self.vel_local * 0.2 - Vector(0, 0, Ride_Height_Functional))
+				continue
 			end
-			
-			if not Any_Trace_Hit then 
-				self._Derivative = 0
-				self._Integral = 0
-				return 
-			end
-			Distance_Average = Distance_Average  * 14.25
-			--2 crossed direction normals cross product = up normal of terrain, no more jank of the 4 offset forces
-			Up_Average = (Trace_Corners[3].HitPos - Trace_Corners[4].HitPos):GetNormalized():Cross((Trace_Corners[1].HitPos - Trace_Corners[2].HitPos):GetNormalized())
-			
-			--Calculate lean based on angular velocity
-			Up_Average = rotate_around_axis(Up_Average, self:GetForward(), math.Clamp(-phys:GetAngleVelocity()[3] * 0.075, -15, 15))
+			Any_Trace_Hit = Any_Trace_Hit or (Trace_Corners[i].Hit and not Trace_Corners[i].HitSky)
+			Distance_Average = Distance_Average + Trace_Corners[i].Fraction
 		end
-
+		
+		if not Any_Trace_Hit then return end
+		
+		Distance_Average = (Distance_Average / #Trace_Offsets)  * Ride_Height_Functional
+		--2 crossed direction normals cross product = up normal of terrain, no more jank of the 4 offset forces
+		Up_Average = (Trace_Corners[3].HitPos - Trace_Corners[4].HitPos):GetNormalized():Cross((Trace_Corners[1].HitPos - Trace_Corners[2].HitPos):GetNormalized())
+		
+		--Calculate lean based on angular velocity
+		Up_Average = rotate_around_axis(Up_Average, self:GetForward(), math.Clamp(-phys:GetAngleVelocity()[3] * 0.1, -20, 20))
+		
+		
 		--Movement Force
-		local Up = Up_Average * self:CalculatePD(PD_Settings, Ride_Height - Distance_Average, self.mass)
+		local Up = Up_Average * self:CalculatePD(PD_Settings, Ride_Height - Distance_Average, mass)
 		local MoveForce = self:GetForward() * 20 * self.WS * (1 + self.Turbo) * self.Tick_Adjust
-		self.Force = (self.Prop_Gravity + Up + MoveForce - phys:GetVelocity() * 0.02) * self.mass
+		self.Force = (self.Prop_Gravity + Up + MoveForce - phys:GetVelocity() * 0.02) * mass
 		
 		phys:ApplyForceCenter(self.Force)
 		
 		--Angle Force
 		self._Cross = self.Cross
-		self.Cross = Up_Average:Cross(self:GetUp()) * 1000
+		self.Cross = Up_Average:Cross(self:GetUp()) * 500
 		self._Cross =  self.Cross - self._Cross
 		
-		local AngVel = self:LocalToWorld(phys:GetAngleVelocity() - Vector(0, 0, self.AD * 300)) - self:GetPos()
-		self.AngForce = (self.Cross + self._Cross * 10 + AngVel) * phys:GetInertia() / 28.5 * self.Tick_Adjust
+		local AngVel = self:LocalToWorld(phys:GetAngleVelocity() * 0.8 - Vector(0, 0, self.AD * 170)) - self:GetPos()
+		self.AngForce = (self.Cross + self._Cross * 5 + AngVel) * mass / 28.5 * self.Tick_Adjust
 		phys:ApplyTorqueCenter(-self.AngForce)
 		
 		self:NextThink(CurTime())
@@ -423,6 +391,7 @@ local WHEEL_OFFSET = Vector(0, 0, 10)
 
 function ENT:Initialize()
 	self.vel_increment = 0
+	self.steering_wheel_angle = 0
 	
 	self.Wheel = ClientsideModel("models/crawler/energy_wheel.mdl", RENDERGROUP_BOTH)
 	
@@ -433,7 +402,6 @@ function ENT:Initialize()
 	self.Wheel:SetParent(self)
 	
 	self.Wheel:SetColor(self.EnergyColor)
-	--Wheel size 50? --dude it's 47...
 	
 	self.DashboardTexture = self.DashboardTexture or GetRenderTargetEx(
 		"Crawler_Dashboard_" .. self:EntIndex(),
@@ -459,13 +427,32 @@ function ENT:Initialize()
 	
 	self.GizmoModel = self.GizmoModel or ClientsideModel("models/crawler/gizmo.mdl")
 	self.GizmoModel:SetNoDraw(true)
+	
 end
 
+local Ride_Height_Visual = Ride_Height + 4
 function ENT:Think()
+	--Wheel spin
 	self.vel_local = self:WorldToLocal(self:GetPos() + self:GetVelocity())
-	self.vel_increment = self.vel_increment  + self.vel_local[1] / 295.30970943744 -- number is circumference of the wheel
-	
+	self.vel_increment = self.vel_increment  + self.vel_local[1] / 295.30970943744 --circumference of the wheel
 	self.Wheel:SetAngles(self:LocalToWorldAngles(Angle(self.vel_increment, 0, 0)))
+	
+	--Wheel suspension
+	local Terrain_Distance = util.TraceHull({
+		start = self:LocalToWorld(WHEEL_OFFSET),
+		endpos = self:LocalToWorld(WHEEL_OFFSET - Vector(0, 0, Ride_Height_Visual)),
+		filter = self,
+		mins = Vector(-2, -2, -2),
+		maxs = Vector(2, 2, 2),
+		mask = MASK_SOLID,
+		collisiongroup = COLLISION_GROUP_WEAPON
+	})
+	self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET + Vector(0, 0, Ride_Height_Visual- Terrain_Distance.Fraction * Ride_Height_Visual)))
+
+	--Steering Wheel
+	local AD = self:GetNWInt("AD", 0)
+	self.steering_wheel_angle = self.steering_wheel_angle + math.Clamp((AD * 20 - self.steering_wheel_angle) *0.035, -2, 2)
+	self:ManipulateBoneAngles(1, Angle(self.steering_wheel_angle, 0, 0), false)
 end
 
 function ENT:DrawDashboard()
@@ -538,13 +525,6 @@ function ENT:DrawGizmo()
 	cam.End3D()
 end
 
-local Trails_Offsets = {
-	Vector(-43, 22, 0),
-	Vector(-40, 19, 5),
-	Vector(-43, -22, 0),
-	Vector(-40, -19, 5)
-}
-
 local sprite_mat = Material("sprites/glow04_noz")
 function ENT:DrawTranslucent()
 	self:DrawDashboard()
@@ -566,9 +546,7 @@ function ENT:OnRemove()
 		self.GizmoModel:Remove()
 	end
 	
-	if IsValid(self.GizmoModel) then
-		self.GizmoModel:Remove()
+	if IsValid(self.Wheel) then
+		self.Wheel:Remove()
 	end
-	
-	self.Wheel:Remove()
 end		
