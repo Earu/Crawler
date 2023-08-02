@@ -16,7 +16,7 @@ ENT.Name = "Crawler"
 ENT.Class = "prop_vehicle_crawler"
 ENT.AdminSpawnable = false
 ENT.EnergyColor = Color(0, 255, 255)
-
+	
 for _, f in pairs(file.Find("sound/crawler/*", "GAME")) do
 	util.PrecacheSound("sound/crawler/" .. f)
 end
@@ -37,26 +37,23 @@ properties.Add("energy_color", {
 		if not IsValid(ent) then return false end
 		if ent:IsPlayer() then return false end
 		
-		local parent = ent:GetParent()
-		if not IsValid(parent) then return false end
-		if parent:GetClass() ~= tag then return false end
-		if not gamemode.Call("CanProperty", ply, "energy_color", parent) then return false end
+		if ent:GetClass() ~= tag then return false end
+		if not gamemode.Call("CanProperty", ply, "energy_color", ent) then return false end
 		
 		return true
 	end,
 	Action = function(self, ent)
-		local parent = ent:GetParent()
-		local col = parent.EnergyColor
+		local col = ent.EnergyColor
 		
 		local frame = vgui.Create("DFrame")
 		frame:SetSize(250, 200)
 		frame:Center()
 		frame:MakePopup()
-		frame:SetTitle(tostring(parent))
+		frame:SetTitle(tostring(ent))
 		frame.OnClose = function()
 			if not IsValid(ent) then return end
 			
-			parent.EnergyColor = col
+			ent.EnergyColor = col
 			self:MsgStart()
 			net.WriteEntity(ent)
 			net.WriteTable(col)
@@ -67,7 +64,8 @@ properties.Add("energy_color", {
 		color_combo:Dock(FILL)
 		color_combo:SetColor(col)
 		function color_combo:OnValueChanged(c)
-			col = Color(c.r, c.g, c.b, c.a)
+			col = c
+			ent:UpdateWheelColor(col)
 		end
 	end,
 	Receive = function(self, length, ply)
@@ -77,23 +75,22 @@ properties.Add("energy_color", {
 		if not properties.CanBeTargeted(ent, ply) then return end
 		if not self:Filter(ent, ply) then return end
 		
-		local parent = ent:GetParent()
-		parent.EnergyColor = col
-		parent.Wheel:SetColor(col)
-		parent:SetupTrails()
+		ent.EnergyColor = col		
+		ent:SetupTrails()
+		
+		net.Start("prop_vehicle_crawler_colors")
+		net.WriteEntity(ent)
+		net.WriteColor(col)
+		net.Broadcast()
 	end
 })
 
 local Ride_Height = 37
 
 if SERVER then
-	ENT.LastComputedRollTime = 0
-	ENT.CurrentRollVariation = 0
-	ENT.WheelLoopStopTime = 0
-	ENT.LatestVelLen = 0
-	ENT.LatestVelDiff = 0
-	
 	local CVAR_FASTDL = CreateConVar("prop_vehicle_crawler_fastdl", "1", FCVAR_ARCHIVE, "Should clients download content for crawlers on join or not")
+	util.AddNetworkString("prop_vehicle_crawler_colors")
+	
 	
 	local function add_resource_dir(dir)
 		for _, f in pairs(file.Find(dir .. "/*","GAME")) do
@@ -163,6 +160,8 @@ if SERVER then
 		self:SetNW2Entity("Seat", self.Seat)
 		self.Seat:GetPhysicsObject():EnableDrag( false ) 
 		self.Seat:GetPhysicsObject():EnableMotion( false )
+		self.Gravity =  -physenv.GetGravity() * engine.TickInterval()
+		self.Tick_Adjust = 66.66 / (1 / engine.TickInterval())
 		
 		self:SetupTrails()
 		self:SetupSounds()
@@ -191,8 +190,6 @@ if SERVER then
 		self._Derivative = 0
 		self._Cross = Vector(0, 0, 0)
 		self.Cross = Vector(0, 0, 0)
-		self.Prop_Gravity = -physenv.GetGravity() * engine.TickInterval()
-		self.Tick_Adjust = 66.66 / (1 / engine.TickInterval())
 		
 		self.Filter = { self, self.Seat }
 	end
@@ -266,8 +263,6 @@ if SERVER then
 	
 	local MIN_VEL_FOR_SOUND = 500
 	function ENT:HandleSounds(velfwd)
-		local velfwd = math.abs(velfwd)
-		
 		self.Sounds.WheelLoop:ChangeVolume(math.min(velfwd / MIN_VEL_FOR_SOUND, 1), 0.1)
 		self.Sounds.WheelLoop:ChangePitch(20 + math.min(velfwd * 0.005, 200))
 		
@@ -286,13 +281,13 @@ if SERVER then
 	end
 	
 	local Trace_Offsets = {
-		
 		Vector(48, 18, 0),
 		Vector(60, -18, 0),
 		Vector(-48, 18, 0),
 		Vector(-60, -18, 0),
 		Vector(0, 0, 0)
 	}
+	
 	local deg2rad = math.pi / 180
 	local function rotate_around_axis(this, axis, degrees) --thank you wiremod
 		local ca, sa = math.cos(degrees*deg2rad), math.sin(degrees*deg2rad)
@@ -308,7 +303,9 @@ if SERVER then
 	local Ride_Height_Functional = Ride_Height + 30
 	function ENT:PhysicsUpdate(phys)
 		self.vel_local = phys:WorldToLocalVector(self:GetVelocity()) --composite not needed as its not e2
-		self:HandleSounds(self.vel_local.x)
+		local velfwd = math.abs(self.vel_local.x)
+		
+		self:HandleSounds(velfwd)
 		
 		local mass = phys:GetMass()
 		local Distance_Average = 0
@@ -340,7 +337,7 @@ if SERVER then
 		
 		--Get 2 cross products
 		local normal1 = -(Trace_Corners[1].HitPos - Trace_Corners[5].HitPos):GetNormalized():Cross((Trace_Corners[2].HitPos - Trace_Corners[5].HitPos):GetNormalized())
-		local normal2= (Trace_Corners[3].HitPos - Trace_Corners[5].HitPos):GetNormalized():Cross((Trace_Corners[4].HitPos - Trace_Corners[5].HitPos):GetNormalized())
+		local normal2 = (Trace_Corners[3].HitPos - Trace_Corners[5].HitPos):GetNormalized():Cross((Trace_Corners[4].HitPos - Trace_Corners[5].HitPos):GetNormalized())
 		
 		--Average it out into 1
 		Up_Average = (normal1 + normal2) * 0.5
@@ -352,7 +349,7 @@ if SERVER then
 		Distance_Average = (Distance_Average / #Trace_Offsets)  * Ride_Height_Functional
 		local Up = Up_Average * self:CalculatePD(PD_Settings, Ride_Height - Distance_Average, mass)
 		local MoveForce = self:GetForward() * 20 * self.WS * (1 + self.Turbo) * self.Tick_Adjust
-		self.Force = (self.Prop_Gravity + Up + MoveForce - phys:GetVelocity() * 0.02) * mass
+		self.Force = (self.Gravity + Up + MoveForce - phys:GetVelocity() * 0.02) * mass
 		
 		phys:ApplyForceCenter(self.Force)
 		
@@ -365,7 +362,6 @@ if SERVER then
 		self.AngForce = (self.Cross + self._Cross * 5 + AngVel) * mass / 28.5 * self.Tick_Adjust
 		phys:ApplyTorqueCenter(-self.AngForce)
 		
-		self:NextThink(CurTime())
 		return true
 	end
 	
@@ -392,6 +388,20 @@ local gizmo_cam_ang = Angle(45, 45, 0)
 local boost_text_col = Color(255, 0, 0)
 local WHEEL_OFFSET = Vector(0, 0, 10)
 
+net.Receive("prop_vehicle_crawler_colors", function()
+	local ent = net.ReadEntity()
+	if ent:GetClass() ~= tag then return end
+	
+	local clr = net.ReadColor()
+	ent:UpdateWheelColor(clr)
+end)
+
+function ENT:UpdateWheelColor(clr)
+	if not IsValid(self.Wheel) then return end
+	self.EnergyColor = clr
+	self.Wheel:SetColor(self.EnergyColor)
+end
+
 function ENT:Initialize()
 	self.vel_increment = 0
 	self.steering_wheel_angle = 0
@@ -404,7 +414,7 @@ function ENT:Initialize()
 	self.Wheel:Spawn()
 	self.Wheel:SetParent(self)
 	
-	self.Wheel:SetColor(self.EnergyColor)
+	self:UpdateWheelColor(self.EnergyColor)
 	
 	self.DashboardTexture = self.DashboardTexture or GetRenderTargetEx(
 		"Crawler_Dashboard_" .. self:EntIndex(),
@@ -451,7 +461,7 @@ function ENT:Think()
 		collisiongroup = COLLISION_GROUP_WEAPON
 	})
 	self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET + Vector(0, 0, Ride_Height_Visual- Terrain_Distance.Fraction * Ride_Height_Visual)))
-
+	
 	--Steering Wheel
 	local AD = self:GetNWInt("AD", 0)
 	self.steering_wheel_angle = self.steering_wheel_angle + math.Clamp((AD * 20 - self.steering_wheel_angle) *0.035, -2, 2)
