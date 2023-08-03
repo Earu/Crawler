@@ -291,10 +291,10 @@ if SERVER then
 	end
 	
 	local Trace_Offsets = {
-		Vector(48, 18, 0),
-		Vector(60, -18, 0),
-		Vector(-48, 18, 0),
-		Vector(-60, -18, 0),
+		Vector(50, 20, 0),
+		Vector(50, -20, 0),
+		Vector(-60, -20, 0),
+		Vector(-60, 20, 0),
 		Vector(0, 0, 0)
 	}
 	
@@ -322,10 +322,10 @@ if SERVER then
 		local Up_Average = Vector(0, 0, 0)
 		
 		--5 Traces, 4 in the corners, 1 in the middle
-		local Trace_Corners = {}
+		local tr_corner = {}
 		local Any_Trace_Hit = false
 		for i, v in ipairs(Trace_Offsets) do
-			Trace_Corners[i] = util.TraceHull({
+			tr_corner[i] = util.TraceHull({
 				start = self:LocalToWorld(v),
 				endpos = self:LocalToWorld(v + self.vel_local * 0.2 - Vector(0, 0, Ride_Height_Functional)),
 				filter = self.Filter,
@@ -334,23 +334,26 @@ if SERVER then
 				mask = MASK_SOLID,
 				collisiongroup = COLLISION_GROUP_WEAPON
 			})
-			if Trace_Corners[i].HitSky then
+			if tr_corner[i].HitSky then
 				Distance_Average = Distance_Average + 1
-				Trace_Corners[i].HitPos = self:LocalToWorld(v + self.vel_local * 0.2 - Vector(0, 0, Ride_Height_Functional))
+				tr_corner[i].HitPos = self:LocalToWorld(v + self.vel_local * 0.2 - Vector(0, 0, Ride_Height_Functional))
 				continue
 			end
-			Any_Trace_Hit = Any_Trace_Hit or (Trace_Corners[i].Hit and not Trace_Corners[i].HitSky)
-			Distance_Average = Distance_Average + Trace_Corners[i].Fraction
+			Any_Trace_Hit = Any_Trace_Hit or (tr_corner[i].Hit and not tr_corner[i].HitSky)
+			Distance_Average = Distance_Average + tr_corner[i].Fraction
 		end
 		
 		if not Any_Trace_Hit then return end
 		
-		--Get 2 cross products
-		local normal1 = -(Trace_Corners[1].HitPos - Trace_Corners[5].HitPos):GetNormalized():Cross((Trace_Corners[2].HitPos - Trace_Corners[5].HitPos):GetNormalized())
-		local normal2 = (Trace_Corners[3].HitPos - Trace_Corners[5].HitPos):GetNormalized():Cross((Trace_Corners[4].HitPos - Trace_Corners[5].HitPos):GetNormalized())
-		
+		--Get 4 cross products
+		local middle_pos = tr_corner[5].HitPos
+		local normal1 = -(tr_corner[1].HitPos - middle_pos):GetNormalized():Cross((tr_corner[2].HitPos - middle_pos):GetNormalized())
+		local normal2 = -(tr_corner[2].HitPos - middle_pos):GetNormalized():Cross((tr_corner[3].HitPos - middle_pos):GetNormalized())
+		local normal3 = -(tr_corner[3].HitPos - middle_pos):GetNormalized():Cross((tr_corner[4].HitPos - middle_pos):GetNormalized())
+		local normal4 = -(tr_corner[4].HitPos - middle_pos):GetNormalized():Cross((tr_corner[1].HitPos - middle_pos):GetNormalized())
+				
 		--Average it out into 1
-		Up_Average = (normal1 + normal2) * 0.5
+		Up_Average = ((normal1 + normal2 + normal3 + normal4) * 0.25):GetNormalized()
 		
 		--Calculate lean based on angular velocity
 		Up_Average = rotate_around_axis(Up_Average, self:GetForward(), math.Clamp(-phys:GetAngleVelocity()[3] * 0.1, -20, 20))
@@ -503,6 +506,9 @@ function ENT:Think()
 	local AD = self:GetNWInt("AD", 0)
 	self.steering_wheel_angle = self.steering_wheel_angle + math.Clamp((AD * 20 - self.steering_wheel_angle) *0.035, -2, 2)
 	self:ManipulateBoneAngles(1, Angle(self.steering_wheel_angle, 0, 0), false)
+	if IsValid(self:GetDriver()) then
+		self:GetDriver():SetPoseParameter("vehicle_steer", -self.steering_wheel_angle / 25)
+	end
 end
 
 function ENT:DrawDashboard()
