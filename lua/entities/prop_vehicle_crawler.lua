@@ -345,9 +345,8 @@ if SERVER then
 		
 		if not Any_Trace_Hit then return end
 		
+		--Get 4 cross products
 		local middle_pos = tr_corner[5].HitPos
-		--Get 2 cross products
-		
 		local normal1 = -(tr_corner[1].HitPos - middle_pos):GetNormalized():Cross((tr_corner[2].HitPos - middle_pos):GetNormalized())
 		local normal2 = -(tr_corner[2].HitPos - middle_pos):GetNormalized():Cross((tr_corner[3].HitPos - middle_pos):GetNormalized())
 		local normal3 = -(tr_corner[3].HitPos - middle_pos):GetNormalized():Cross((tr_corner[4].HitPos - middle_pos):GetNormalized())
