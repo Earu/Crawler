@@ -441,19 +441,21 @@ function ENT:UpdateWheelColor(clr)
 	self.Wheel:SetColor(self.EnergyColor)
 end
 
-function ENT:Initialize()
-	self.vel_increment = 0
-	self.steering_wheel_angle = 0
-	
+function ENT:SetupWheel()
 	self.Wheel = ClientsideModel("models/crawler/energy_wheel.mdl", RENDERGROUP_BOTH)
-	
 	self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET))
 	self.Wheel.RenderGroup = RENDERGROUP_BOTH
 	self.Wheel:SetAngles(self:LocalToWorldAngles(Angle(0, 0, 0)))
 	self.Wheel:Spawn()
 	self.Wheel:SetParent(self)
-	
 	self:RequestColor()
+end
+
+function ENT:Initialize()
+	self.vel_increment = 0
+	self.steering_wheel_angle = 0
+
+	self:SetupWheel()
 	self:UpdateWheelColor(self.EnergyColor)
 	
 	self.DashboardTexture = self.DashboardTexture or GetRenderTargetEx(
@@ -502,6 +504,8 @@ function ENT:Think()
 			collisiongroup = COLLISION_GROUP_WEAPON
 		})
 		self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET + Vector(0, 0, Ride_Height_Visual- Terrain_Distance.Fraction * Ride_Height_Visual)))
+	else
+		self:SetupWheel()
 	end
 	
 	--Steering Wheel
