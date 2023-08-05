@@ -593,7 +593,9 @@ function ENT:DrawTranslucent()
 	
 	render.SetMaterial(sprite_mat)
 	for i = 1, 4 do
-		render.DrawSprite(self:GetAttachment(i).Pos, size, size, self.EnergyColor)
+		local attachment = self:GetAttachment(i)
+		if not attachment then continue end
+		render.DrawSprite(attachment.Pos, size, size, self.EnergyColor)
 	end
 end
 
