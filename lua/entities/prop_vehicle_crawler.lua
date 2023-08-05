@@ -485,22 +485,24 @@ end
 
 local Ride_Height_Visual = Ride_Height + 11
 function ENT:Think()
-	--Wheel spin
-	self.vel_local = self:WorldToLocal(self:GetPos() + self:GetVelocity())
-	self.vel_increment = self.vel_increment  + self.vel_local[1] / 295.30970943744 --circumference of the wheel
-	self.Wheel:SetAngles(self:LocalToWorldAngles(Angle(self.vel_increment, 0, 0)))
+	if IsValid(self.Wheel) then
+		--Wheel spin
+		self.vel_local = self:WorldToLocal(self:GetPos() + self:GetVelocity())
+		self.vel_increment = self.vel_increment  + self.vel_local[1] / 295.30970943744 --circumference of the wheel
+		self.Wheel:SetAngles(self:LocalToWorldAngles(Angle(self.vel_increment, 0, 0)))
 	
-	--Wheel suspension
-	local Terrain_Distance = util.TraceHull({
-		start = self:LocalToWorld(WHEEL_OFFSET),
-		endpos = self:LocalToWorld(WHEEL_OFFSET - Vector(0, 0, Ride_Height_Visual)),
-		filter = self,
-		mins = Vector(-2, -2, -2),
-		maxs = Vector(2, 2, 2),
-		mask = MASK_SOLID,
-		collisiongroup = COLLISION_GROUP_WEAPON
-	})
-	self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET + Vector(0, 0, Ride_Height_Visual- Terrain_Distance.Fraction * Ride_Height_Visual)))
+		--Wheel suspension
+		local Terrain_Distance = util.TraceHull({
+			start = self:LocalToWorld(WHEEL_OFFSET),
+			endpos = self:LocalToWorld(WHEEL_OFFSET - Vector(0, 0, Ride_Height_Visual)),
+			filter = self,
+			mins = Vector(-2, -2, -2),
+			maxs = Vector(2, 2, 2),
+			mask = MASK_SOLID,
+			collisiongroup = COLLISION_GROUP_WEAPON
+		})
+		self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET + Vector(0, 0, Ride_Height_Visual- Terrain_Distance.Fraction * Ride_Height_Visual)))
+	end
 	
 	--Steering Wheel
 	local AD = self:GetNWInt("AD", 0)
