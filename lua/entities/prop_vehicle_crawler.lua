@@ -441,19 +441,21 @@ function ENT:UpdateWheelColor(clr)
 	self.Wheel:SetColor(self.EnergyColor)
 end
 
-function ENT:Initialize()
-	self.vel_increment = 0
-	self.steering_wheel_angle = 0
-	
+function ENT:SetupWheel()
 	self.Wheel = ClientsideModel("models/crawler/energy_wheel.mdl", RENDERGROUP_BOTH)
-	
 	self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET))
 	self.Wheel.RenderGroup = RENDERGROUP_BOTH
 	self.Wheel:SetAngles(self:LocalToWorldAngles(Angle(0, 0, 0)))
 	self.Wheel:Spawn()
 	self.Wheel:SetParent(self)
-	
 	self:RequestColor()
+end
+
+function ENT:Initialize()
+	self.vel_increment = 0
+	self.steering_wheel_angle = 0
+
+	self:SetupWheel()
 	self:UpdateWheelColor(self.EnergyColor)
 	
 	self.DashboardTexture = self.DashboardTexture or GetRenderTargetEx(
@@ -485,22 +487,26 @@ end
 
 local Ride_Height_Visual = Ride_Height + 11
 function ENT:Think()
-	--Wheel spin
-	self.vel_local = self:WorldToLocal(self:GetPos() + self:GetVelocity())
-	self.vel_increment = self.vel_increment  + self.vel_local[1] / 295.30970943744 --circumference of the wheel
-	self.Wheel:SetAngles(self:LocalToWorldAngles(Angle(self.vel_increment, 0, 0)))
+	if IsValid(self.Wheel) then
+		--Wheel spin
+		self.vel_local = self:WorldToLocal(self:GetPos() + self:GetVelocity())
+		self.vel_increment = self.vel_increment  + self.vel_local[1] / 295.30970943744 --circumference of the wheel
+		self.Wheel:SetAngles(self:LocalToWorldAngles(Angle(self.vel_increment, 0, 0)))
 	
-	--Wheel suspension
-	local Terrain_Distance = util.TraceHull({
-		start = self:LocalToWorld(WHEEL_OFFSET),
-		endpos = self:LocalToWorld(WHEEL_OFFSET - Vector(0, 0, Ride_Height_Visual)),
-		filter = self,
-		mins = Vector(-2, -2, -2),
-		maxs = Vector(2, 2, 2),
-		mask = MASK_SOLID,
-		collisiongroup = COLLISION_GROUP_WEAPON
-	})
-	self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET + Vector(0, 0, Ride_Height_Visual- Terrain_Distance.Fraction * Ride_Height_Visual)))
+		--Wheel suspension
+		local Terrain_Distance = util.TraceHull({
+			start = self:LocalToWorld(WHEEL_OFFSET),
+			endpos = self:LocalToWorld(WHEEL_OFFSET - Vector(0, 0, Ride_Height_Visual)),
+			filter = self,
+			mins = Vector(-2, -2, -2),
+			maxs = Vector(2, 2, 2),
+			mask = MASK_SOLID,
+			collisiongroup = COLLISION_GROUP_WEAPON
+		})
+		self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET + Vector(0, 0, Ride_Height_Visual- Terrain_Distance.Fraction * Ride_Height_Visual)))
+	else
+		self:SetupWheel()
+	end
 	
 	--Steering Wheel
 	local AD = self:GetNWInt("AD", 0)
