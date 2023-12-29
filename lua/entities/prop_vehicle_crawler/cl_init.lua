@@ -36,10 +36,10 @@ end)
 function ENT:SetupWheel()
 	self.Wheel = ClientsideModel("models/crawler/energy_wheel.mdl", RENDERGROUP_BOTH)
 	self.Wheel:SetPos(self:LocalToWorld(WHEEL_OFFSET))
-    self.Wheel:SetAngles(self:LocalToWorldAngles(Angle(0, 0, 0)))
-    self.Wheel:SetColor(self.EnergyColor)
+	self.Wheel:SetAngles(self:LocalToWorldAngles(Angle(0, 0, 0)))
+	self.Wheel:SetColor(self.EnergyColor)
 	self.Wheel.RenderGroup = RENDERGROUP_BOTH
-    self.Wheel:SetParent(self)
+	self.Wheel:SetParent(self)
 	self.Wheel:Spawn()
 end
 
@@ -71,6 +71,8 @@ function ENT:Initialize()
 		}
 	)
 
+	local clr = self:GetEnergyColor()
+	self.EnergyColor = Color(clr.x, clr.y, clr.z)
 	self.GizmoModel = self.GizmoModel or ClientsideModel("models/crawler/gizmo.mdl")
 	self.GizmoModel:SetNoDraw(true)
 
@@ -101,7 +103,7 @@ function ENT:Think()
 
 	--Steering Wheel
 	local AD = self:GetSteering()
-	self.steering_wheel_angle = self.steering_wheel_angle + math.Clamp((AD * 20 - self.steering_wheel_angle) *0.035, -2, 2) * 150 * FrameTime()
+	self.steering_wheel_angle = self.steering_wheel_angle + math.Clamp((AD * 20 - self.steering_wheel_angle) * 0.035, -2, 2) * 150 * FrameTime()
 	self:ManipulateBoneAngles(1, Angle(self.steering_wheel_angle, 0, 0), false)
 	if IsValid(self:GetDriver()) then
 		self:GetDriver():SetPoseParameter("vehicle_steer", -self.steering_wheel_angle / 25)
